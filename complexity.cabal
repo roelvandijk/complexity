@@ -1,0 +1,27 @@
+name:          complexity
+version:       0.1
+cabal-version: >= 1.6
+build-type:    Simple
+stability:     experimental
+author:        Roel van Dij
+maintainer:    vandijk.roel@gmail.com
+copyright:     (c) 2009 Roel van Dijk
+license:       BSD3
+license-file:  LICENSE
+category:      Testing
+synopsis:      Empirical algorithmic complexity
+description:
+  TODO
+
+library
+  GHC-Options: -O2
+  build-depends:   base, time, parallel, data-accessor, pretty, colour, Chart
+  exposed-modules: Test.Complexity
+                   , Test.Complexity.Chart
+                   , Test.Complexity.Pretty
+                   , Test.Complexity.Statistics
+                   , Test.Complexity.Types
+
+executable Prog
+  GHC-Options: -O2
+  main-is: Prog.hs
