@@ -1,7 +1,9 @@
 module Main where
 
+import System.Environment (getArgs)
+
 import Test.Complexity
 import Test.Complexity.Debug
 
 main :: IO ()
-main = test testFibs 5 [0,1000..30000]
+main = test' (testQSort ++ testSort) 10 1.1 . read . head =<< getArgs

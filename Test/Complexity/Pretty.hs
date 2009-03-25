@@ -5,8 +5,11 @@ module Test.Complexity.Pretty where
 import Text.PrettyPrint
 import Text.Printf (printf)
 
-import Test.Complexity.Types
-import Test.Complexity.Statistics
+import Test.Complexity ( SampleStats(..)
+                       , EvalStats(..)
+                       , Stats(..)
+                       )
+
 
 ppEvalStats :: EvalStats -> Doc
 ppEvalStats (EvalStats {..}) = text "desc:" <+> text desc
@@ -19,7 +22,7 @@ ppEvalStats (EvalStats {..}) = text "desc:" <+> text desc
                                         <+> text "wall" <+> ppStats wallTime
           ppStats (Stats {..}) = int stSamples
                                  <+> hsep (map (text . printf "%7.3f")
-                                               [stMin, stMean, stMedian, stMax, stStdDev]
+                                               [stMin, stMean, stMax, stStdDev]
                                           )
 
 quickPrint :: [EvalStats] -> IO ()

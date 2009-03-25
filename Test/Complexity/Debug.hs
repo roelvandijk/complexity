@@ -1,26 +1,40 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Test.Complexity.Debug where
 
+import Control.Monad (replicateM)
+import Control.Parallel.Strategies (NFData)
+import Data.Function (fix)
 import Data.List (genericIndex, genericTake, nub, group, sort, unfoldr)
 import System.CPUTime (getCPUTime)
-import Control.Monad (replicateM)
 
-import Data.Function (fix)
+import qualified Data.List as L
+import qualified Data.Map as M
+import Control.Arrow (second)
 
 import Test.Complexity
 import qualified Test.Complexity.Pretty as PP
 import qualified Test.Complexity.Chart  as Ch
 
-test :: [Test] -> Int -> [Integer] -> IO ()
-test fs i ns = do mStats <- mapM (\(Test l g f) -> measureNs l g (strictAction f) i ns) fs
-                  maybe (putStrLn "ERROR!")
-                        Ch.quickToChart
-                        (sequence mStats)
+data Test = forall a b. (NFData a, NFData b) => Test String (SizeGen a) (a -> b)
+
+testCH :: [Test] -> Int -> [Integer] -> IO ()
+testCH fs i ns = Ch.quickToChart =<< mapM (\(Test l g f) -> measureNs l g (strictAction f) i ns) fs
 
 testPP :: [Test] -> Int -> [Integer] -> IO ()
-testPP fs i ns = do mStats <- mapM (\(Test l g f) -> measureNs l g (strictAction f) i ns) fs
-                    maybe (putStrLn "ERROR!")
-                          PP.quickPrint
-                          (sequence mStats)
+testPP fs i ns = do PP.quickPrint =<< mapM (\(Test l g f) -> measureNs l g (strictAction f) i ns) fs
+
+test :: [Test] -> Int -> [Integer] -> IO ()
+test fs i ns = do mStats <- mapM (\(Test l g f) -> measureNs l g (strictAction f) i ns) fs
+                  PP.quickPrint   mStats
+                  Ch.quickToChart mStats
+
+test' :: [Test] -> Int -> Double -> Double -> IO ()
+test' fs i timeInc maxTime = let tMax = maxTime / (fromIntegral $ length fs)
+                             in
+    do mStats <- mapM (\(Test l g f) -> smartMeasure l g (strictAction f) i 10 4096 timeInc tMax) fs
+       PP.quickPrint   mStats
+       Ch.quickToChart mStats
 
 -------------------------------------------------------------------------------
 
@@ -63,11 +77,11 @@ fib4 n = fibs !! fromInteger n
 
 fib5 :: Integer -> Integer
 fib5 n = fibs !! fromInteger n
-    where fibs = unfoldr (\(a,b) -> Just (a,(b,a+b))) (0,1)
+    where fibs = unfoldr (\(a,b) -> Just (a,(b, a+b))) (0,1)
 
 fib6 :: Integer -> Integer
 fib6 n = fibs !! fromInteger n
-    where fibs = map fst $ iterate (\(a,b) -> (b,a+b)) (0,1)
+    where fibs = map fst $ iterate (\(a,b) -> (b, a+b)) (0,1)
 
 bsort :: Ord a => [a] -> [a]
 bsort [] = []
@@ -102,30 +116,43 @@ bla3 :: Integer -> Int
 bla3 n = last $ take (fromInteger n) $ cycle3 [1..1000]
 
 testFibs :: [Test]
-testFibs = [ Test "fib1"  id fib1
-           , Test "fib2"  id fib2
-           --, Test "fib3"  id fib3
-           --, Test "fib4"  id fib4
-           --, Test "fib5"  id fib5
-           --, Test "fib6"  id fib6
+testFibs = [-- Test "fib1" (return . id) fib1
+             Test "fib2" (return . id) fib2
+           , Test "fib3" (return . id) fib3
+           , Test "fib4" (return . id) fib4
+           , Test "fib5" (return . id) fib5
+           , Test "fib6" (return . id) fib6
            ]
 
 -------------------------------------------------------------------------------
 
 testFib1, testFib2, testNub, testGroup :: [Test]
-testFib1   = [Test "fib1"   id         fib1]
-testFib2   = [Test "fib2"   id         fib2]
-testNub    = [Test "nub"    mkIntList2 nub]
-testGroup  = [Test "group"  mkIntList2 group]
+testFib1   = [Test "fib1"   (return . id)         fib1]
+testFib2   = [Test "fib2"   (return . id)         fib2]
+testNub    = [Test "nub"    (return . mkIntList2) nub]
+testGroup  = [Test "group"  (return . mkIntList2) group]
 
 testBSort, testQSort, testSort :: [Test]
-testBSort  = [Test "bubble" mkIntList2 bsort]
-testQSort  = [Test "qsort"  mkIntList2 qsort]
-testSort   = [Test "sort"   mkIntList2 sort]
+testBSort  = [Test "bubble" (return . mkIntList2) bsort]
+testQSort  = [Test "qsort"  (return . mkIntList2) qsort]
+testSort   = [Test "sort"   (return . mkIntList2) sort]
+
+
+sizeL :: Integer -> (Int, [(Int, Int)])
+sizeL n = let n' = fromInteger n
+          in (n', [(m,m) | m <- [1..n']])
+
+sizeM :: Integer -> (Int, M.Map Int Int)
+sizeM = second (M.fromList) . sizeL
+
+lookL (n, as) = L.lookup n as
+lookM (n, as) = M.lookup n as
+
 
 xs :: [Test]
-xs = {-testBSort ++ -} testQSort ++ testSort
-
+xs = [ --Test "l" (return . sizeL) lookL
+      Test "m" (return . sizeM) lookM
+     ]
 -------------------------------------------------------------------------------
 
 zoei :: Int -> IO ()

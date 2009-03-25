@@ -11,8 +11,10 @@ import Data.Colour
 import qualified Data.Colour.Names as CN
 import Data.Colour.SRGB
 
-import Test.Complexity.Types
-import Test.Complexity.Statistics
+import Test.Complexity ( EvalStats(..)
+                       , SampleStats(..)
+                       , Stats(..)
+                       )
 
 
 colourToCairo :: Colour Double -> Color
@@ -76,11 +78,13 @@ statsToPlots c timeStats = [ toPlot cpuMinMax
           vs_cpuStdDev = [stStdDev cpuTime | (SampleStats {cpuTime}) <- timeStats]
 
 quickToChart :: [EvalStats] -> IO ()
-quickToChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 640 480
+quickToChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
     where colours = [ CN.blue
                     , CN.red
                     , CN.green
-                    , CN.goldenrod
-                    , CN.cyan
-                    , CN.wheat
+                    , CN.darkgoldenrod
+                    , CN.orchid
+                    , CN.sienna
+                    , CN.darkcyan
+                    , CN.olivedrab
                     ] ++ repeat CN.silver
