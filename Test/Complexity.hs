@@ -1,10 +1,9 @@
-{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Complexity where
 
-import Control.Monad               (replicateM_)
 import Control.Parallel            (pseq)
-import Control.Parallel.Strategies (NFData, rnf, using)
+import Control.Parallel.Strategies (NFData, rnf, using, ($|))
 import Data.Time.Clock             (UTCTime, getCurrentTime, diffUTCTime)
 import System.CPUTime              (getCPUTime)
 import System.Timeout              (timeout)
@@ -17,7 +16,7 @@ import Math.Statistics             (stddev, mean)
 -------------------------------------------------------------------------------
 
 -- |An @Action is a function which can be measured.
-type Action a  = a -> IO ()
+type Action a b = a -> IO b
 
 -- |A @SizeGen produces a value of a certain size.
 type SizeGen a = Integer -> IO a
@@ -37,8 +36,22 @@ data Stats = Stats { stMin     :: Double
                    , stMax     :: Double
                    , stStdDev  :: Double
                    , stMean    :: Double
+                   -- |Mean of all samples that lie within one
+                   --  standard deviation from the mean.
+                   , stMean2   :: Double
+                   -- |Samples from which these statistics are
+                   --  derived.
                    , stSamples :: Int
                    } deriving Show
+
+-------------------------------------------------------------------------------
+
+-- |Very strict monadic bind
+(>>=|) :: (Monad m,  NFData a) => m a -> (a -> m b) -> m b
+m >>=| f = m >>= \x -> (f $| rnf) x
+
+diff :: Num a => a -> a -> a
+diff x y = abs $ x - y
 
 -------------------------------------------------------------------------------
 
@@ -46,17 +59,25 @@ data Stats = Stats { stMin     :: Double
 stats :: [Double] -> Stats
 stats xs = Stats { stMin     = minimum xs
                  , stMax     = maximum xs
-                 , stStdDev  = stddev  xs
-                 , stMean    = mean    xs
-                 , stSamples = length  xs
+                 , stStdDev  = stddev_xs
+                 , stMean    = mean_xs
+                 , stMean2   = mean2_xs
+                 , stSamples = length xs
                  }
+    where stddev_xs = stddev xs
+          mean_xs   = mean xs
+          mean2_xs  = let xs' = filter (\x -> diff mean_xs x < stddev_xs) xs
+                      in if null xs'
+                         then mean_xs
+                         else mean xs'
+
 
 -------------------------------------------------------------------------------
 
-measureNs :: NFData  a
+measureNs :: (NFData a, NFData b)
           => String
           -> SizeGen a
-          -> Action  a
+          -> Action  a b
           -> Int
           -> [Integer]
           -> IO EvalStats
@@ -66,24 +87,26 @@ measureNs desc gen action numSamples ns =
     where
       mkEvalStats ts = EvalStats {desc = desc, timeStats = ts}
       minSampleTime  = 10
-      maxIter        = 2 ^ (12 :: Int)
+      maxIter        = 2 ^ (15 :: Int)
 
-smartMeasure :: NFData  a
+smartMeasure :: (NFData a, NFData b)
              => String
              -> SizeGen a
-             -> Action  a
+             -> Action  a b
              -> Int       -- ^Number of samples
              -> Double    -- ^Minimum sample time (in CPU milliseconds)
-             -> Int       -- ^Maximum number of iterations per sample
              -> Double    -- ^Time increment coefficient
              -> Double    -- ^Maximum measure time in seconds (wall clock time)
+             -> Integer   -- ^Maximum input size
              -> IO (EvalStats)
-smartMeasure desc gen action numSamples minSampleTime maxIter timeInc maxMeasureTime =
+smartMeasure desc gen action numSamples minSampleTime timeInc maxMeasureTime maxN =
     do t0 <- getCurrentTime
        x  <- measureAction gen action numSamples minSampleTime maxIter 0
        xs <- loop t0 x
        return $ mkEvalStats (reverse xs)
     where
+      maxIter = 2 ^ (15 :: Int)
+
       mkEvalStats :: [SampleStats] -> EvalStats
       mkEvalStats ts = EvalStats {desc = desc, timeStats = ts}
 
@@ -93,12 +116,12 @@ smartMeasure desc gen action numSamples minSampleTime maxIter timeInc maxMeasure
             go :: SampleStats -> Integer -> [SampleStats] -> IO [SampleStats]
             go prev n acc = do curTime <- getCurrentTime
                                let remainingTime = maxMeasureTime - (realToFrac $ diffUTCTime curTime startTime)
-                               if remainingTime > 0
+                               if remainingTime > 0 && n < maxN
                                  then do mx <- timeout (round $ remainingTime * 1e6)
                                                        $ measureAction gen action numSamples minSampleTime maxIter n
                                          maybe (return acc)
-                                               (\x -> do let curTime  = stMean $ cpuTime x
-                                                             prevTime = stMean $ cpuTime prev
+                                               (\x -> do let curTime  = stMean2 $ cpuTime x
+                                                             prevTime = stMean2 $ cpuTime prev
                                                              dN = n - inputSize prev
                                                              dT = curTime  - prevTime
                                                              nextN = ceiling $ ((fromInteger dN) / dT) * (timeInc * curTime)
@@ -113,9 +136,9 @@ smartMeasure desc gen action numSamples minSampleTime maxIter timeInc maxMeasure
 
 -- |Measure the time needed to evaluate an action when applied to an
 --  input of size 'n'.
-measureAction :: NFData  a
+measureAction :: (NFData  a, NFData b)
               => SizeGen a
-              -> Action  a
+              -> Action  a b
               -> Int       -- ^Number of samples
               -> Double    -- ^Minimum sample time (in CPU milliseconds)
               -> Int       -- ^Maximum number of iterations per sample
@@ -131,10 +154,9 @@ measureAction gen action numSamples minSampleTime maxIter inputSize = fmap analy
                                   }
 
       measure :: IO [(Double, Double)]
-      measure = do x <- gen inputSize
-                   (x `using` rnf) `pseq` ( mapM (sample minSampleTime maxIter action)
-                                                 $ replicate numSamples x
-                                          )
+      measure = gen inputSize >>=| \x ->
+                  mapM (sample minSampleTime maxIter action)
+                       $ replicate numSamples x
 
 -- |Measure the execution time of an action.
 --  Actions will be executed repeatedly until the cumulative CPU time
@@ -146,9 +168,10 @@ measureAction gen action numSamples minSampleTime maxIter inputSize = fmap analy
 --  know only the execution time of the supplied action and not the
 --  evaluation time of its input value you should ensure that the
 --  input value is in head normal form.
-sample :: Double           -- ^Minimum run time (in milliseconds)
+sample :: NFData b
+       => Double           -- ^Minimum run time (in milliseconds)
        -> Int              -- ^Maximum number of iterations per sample
-       -> Action a         -- ^The action to measure
+       -> Action a b       -- ^The action to measure
        -> a                -- ^Input value
        -> IO (Double, Double)
 sample minSampleTime maxIter action x = go 1 0 0 0
@@ -160,6 +183,7 @@ sample minSampleTime maxIter action x = go 1 0 0 0
              let totCpuT'  = totCpuT  + curCpuT
                  totWallT' = totWallT + curWallT
                  totIter'  = totIter + n
+             -- TODO: move check to front, totIter may not exceed maxIter
              if totCpuT' >= minSampleTime || totIter' >= maxIter
                then let numIter = fromIntegral totIter'
                     in return (totCpuT' / numIter, totWallT' / numIter)
@@ -167,7 +191,8 @@ sample minSampleTime maxIter action x = go 1 0 0 0
 
 
 -- |Time the evaluation of an IO action.
-timeIO :: Action a            -- ^The IO action to measure
+timeIO :: NFData b
+       => Action a b          -- ^The IO action to measure
        -> a                   -- ^Input value of the IO action
        -> Int                 -- ^Number of times the action is repeated
        -> IO (Double, Double) -- ^CPU- and wall clock time
@@ -175,13 +200,20 @@ timeIO f x n = do -- Record the start time.
                   startWall <- getCurrentTime
                   startCPU  <- getCPUTime
                   -- Run the action.
-                  replicateM_ n $ f x
+                  strictReplicateM_ n $ f `strictApplyM` x
                   -- Record the finish time.
                   endCPU  <- getCPUTime
                   endWall <- getCurrentTime
                   return ( picoToMilli $ endCPU - startCPU
                          , 1000 * (realToFrac $ diffUTCTime endWall startWall)
                          )
+
+
+strictReplicateM_ :: Int -> IO a  -> IO ()
+strictReplicateM_ n f = go n
+    where go 0 = return ()
+          go n = do x <- f
+                    x `pseq` go (n - 1)
 
 -------------------------------------------------------------------------------
 
@@ -190,5 +222,6 @@ picoToMilli p = (fromInteger p) / 1e9
 
 -------------------------------------------------------------------------------
 
-strictAction :: NFData b => (a -> b) -> (a -> IO ())
-strictAction f = \x -> (f x `using` rnf) `pseq` return ()
+strictApplyM :: (Monad m, NFData b) => (a -> m b) -> a -> m b
+strictApplyM f x = do y <- f x
+                      return $ (y `using` rnf) `pseq` y

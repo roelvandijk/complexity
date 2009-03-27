@@ -22,7 +22,7 @@ ppEvalStats (EvalStats {..}) = text "desc:" <+> text desc
                                         <+> text "wall" <+> ppStats wallTime
           ppStats (Stats {..}) = int stSamples
                                  <+> hsep (map (text . printf "%7.3f")
-                                               [stMin, stMean, stMax, stStdDev]
+                                               [stMin, stMean2, stMax, stStdDev]
                                           )
 
 quickPrint :: [EvalStats] -> IO ()
