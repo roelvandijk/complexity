@@ -1,6 +1,21 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
-module Test.Complexity where
+module Test.Complexity ( Action
+                       , ActionM
+                       , SizeGen
+                       , SizeGenM
+                       , SampleStats(..)
+                       , EvalStats(..)
+                       , Stats(..)
+                       , Measurable
+
+                       , measurable
+                       , pureMeasurable
+
+                       , measureNs
+                       , smartMeasure
+                       ) where
 
 import Control.Parallel            (pseq)
 import Control.Parallel.Strategies (NFData, rnf, using, ($|))
@@ -9,40 +24,53 @@ import System.CPUTime              (getCPUTime)
 import System.Timeout              (timeout)
 import Math.Statistics             (stddev, mean)
 
--- import System.Mem (performGC)
-
 -------------------------------------------------------------------------------
 -- Types
 -------------------------------------------------------------------------------
 
 -- |An @Action is a function which can be measured.
-type Action a b = a -> IO b
+type Action  a b = a -> b
+type ActionM a b = a -> IO b
 
 -- |A @SizeGen produces a value of a certain size.
-type SizeGen a = Integer -> IO a
+type SizeGen  a = Integer -> a
+type SizeGenM a = Integer -> IO a
 
 -- |Statistics about the sampling of a single input value.
 data SampleStats = SampleStats { inputSize :: Integer
                                , cpuTime   :: Stats
+                                 -- ^CPU time statistics
                                , wallTime  :: Stats
+                                 -- ^Wall clock time statistics
                                } deriving Show
 
--- |Statistics about a measurement performed on many input sizes.
+-- |Statistics about a measurement performed on many inputs.
 data EvalStats = EvalStats { desc      :: String
                            , timeStats :: [SampleStats]
                            } deriving Show
 
-data Stats = Stats { stMin     :: Double
-                   , stMax     :: Double
-                   , stStdDev  :: Double
-                   , stMean    :: Double
+data Stats = Stats { statsMin     :: Double
+                   , statsMax     :: Double
+                   , statsStdDev  :: Double
+                   , statsMean    :: Double
                    -- |Mean of all samples that lie within one
                    --  standard deviation from the mean.
-                   , stMean2   :: Double
-                   -- |Samples from which these statistics are
-                   --  derived.
-                   , stSamples :: Int
+                   , statsMean2   :: Double
+                   -- |Number of samples from which these statistics
+                   --  are derived.
+                   , statsSamples :: Int
                    } deriving Show
+
+-- |Something that can be measured. Contains all information that is
+--  necessary to perform a measurement.
+data Measurable = forall a b. (NFData a, NFData b) => Measurable String (SizeGenM a) (ActionM a b)
+
+measurable :: (NFData a, NFData b) => String -> SizeGenM a -> ActionM a b -> Measurable
+measurable = Measurable
+
+-- |Construct a @Measurable from pure functions.
+pureMeasurable :: (NFData a, NFData b) => String -> SizeGen a -> Action a b -> Measurable
+pureMeasurable desc gen f= Measurable desc (return . gen) (return . f)
 
 -------------------------------------------------------------------------------
 
@@ -50,19 +78,32 @@ data Stats = Stats { stMin     :: Double
 (>>=|) :: (Monad m,  NFData a) => m a -> (a -> m b) -> m b
 m >>=| f = m >>= \x -> (f $| rnf) x
 
+strictReplicateM_ :: Int -> IO a  -> IO ()
+strictReplicateM_ n f = go n
+    where go 0 = return ()
+          go n = do x <- f
+                    x `pseq` go (n - 1)
+
+strictApplyM :: (Monad m, NFData b) => (a -> m b) -> a -> m b
+strictApplyM f x = do y <- f x
+                      return $ (y `using` rnf) `pseq` y
+
 diff :: Num a => a -> a -> a
 diff x y = abs $ x - y
+
+picoToMilli :: Integer -> Double
+picoToMilli p = (fromInteger p) / 1e9
 
 -------------------------------------------------------------------------------
 
 -- Precondition: not $ null xs
 stats :: [Double] -> Stats
-stats xs = Stats { stMin     = minimum xs
-                 , stMax     = maximum xs
-                 , stStdDev  = stddev_xs
-                 , stMean    = mean_xs
-                 , stMean2   = mean2_xs
-                 , stSamples = length xs
+stats xs = Stats { statsMin     = minimum xs
+                 , statsMax     = maximum xs
+                 , statsStdDev  = stddev_xs
+                 , statsMean    = mean_xs
+                 , statsMean2   = mean2_xs
+                 , statsSamples = length xs
                  }
     where stddev_xs = stddev xs
           mean_xs   = mean xs
@@ -74,14 +115,11 @@ stats xs = Stats { stMin     = minimum xs
 
 -------------------------------------------------------------------------------
 
-measureNs :: (NFData a, NFData b)
-          => String
-          -> SizeGen a
-          -> Action  a b
-          -> Int
+measureNs :: Int
           -> [Integer]
+          -> Measurable
           -> IO EvalStats
-measureNs desc gen action numSamples ns =
+measureNs numSamples ns (Measurable desc gen action) =
     do xs <- mapM (measureAction gen action numSamples minSampleTime maxIter) ns
        return $ mkEvalStats xs
     where
@@ -89,17 +127,14 @@ measureNs desc gen action numSamples ns =
       minSampleTime  = 10
       maxIter        = 2 ^ (15 :: Int)
 
-smartMeasure :: (NFData a, NFData b)
-             => String
-             -> SizeGen a
-             -> Action  a b
-             -> Int       -- ^Number of samples
+smartMeasure :: Int       -- ^Number of samples
              -> Double    -- ^Minimum sample time (in CPU milliseconds)
              -> Double    -- ^Time increment coefficient
              -> Double    -- ^Maximum measure time in seconds (wall clock time)
              -> Integer   -- ^Maximum input size
+             -> Measurable
              -> IO (EvalStats)
-smartMeasure desc gen action numSamples minSampleTime timeInc maxMeasureTime maxN =
+smartMeasure numSamples minSampleTime timeInc maxMeasureTime maxN (Measurable desc gen action) =
     do t0 <- getCurrentTime
        x  <- measureAction gen action numSamples minSampleTime maxIter 0
        xs <- loop t0 x
@@ -120,8 +155,8 @@ smartMeasure desc gen action numSamples minSampleTime timeInc maxMeasureTime max
                                  then do mx <- timeout (round $ remainingTime * 1e6)
                                                        $ measureAction gen action numSamples minSampleTime maxIter n
                                          maybe (return acc)
-                                               (\x -> do let curTime  = stMean2 $ cpuTime x
-                                                             prevTime = stMean2 $ cpuTime prev
+                                               (\x -> do let curTime  = statsMean2 $ cpuTime x
+                                                             prevTime = statsMean2 $ cpuTime prev
                                                              dN = n - inputSize prev
                                                              dT = curTime  - prevTime
                                                              nextN = ceiling $ ((fromInteger dN) / dT) * (timeInc * curTime)
@@ -133,12 +168,13 @@ smartMeasure desc gen action numSamples minSampleTime timeInc maxMeasureTime max
                                                mx
                                  else return acc
 
+-------------------------------------------------------------------------------
 
 -- |Measure the time needed to evaluate an action when applied to an
 --  input of size 'n'.
-measureAction :: (NFData  a, NFData b)
-              => SizeGen a
-              -> Action  a b
+measureAction :: (NFData a, NFData b)
+              => SizeGenM a
+              -> ActionM  a b
               -> Int       -- ^Number of samples
               -> Double    -- ^Minimum sample time (in CPU milliseconds)
               -> Int       -- ^Maximum number of iterations per sample
@@ -171,7 +207,7 @@ measureAction gen action numSamples minSampleTime maxIter inputSize = fmap analy
 sample :: NFData b
        => Double           -- ^Minimum run time (in milliseconds)
        -> Int              -- ^Maximum number of iterations per sample
-       -> Action a b       -- ^The action to measure
+       -> ActionM a b      -- ^The action to measure
        -> a                -- ^Input value
        -> IO (Double, Double)
 sample minSampleTime maxIter action x = go 1 0 0 0
@@ -192,7 +228,7 @@ sample minSampleTime maxIter action x = go 1 0 0 0
 
 -- |Time the evaluation of an IO action.
 timeIO :: NFData b
-       => Action a b          -- ^The IO action to measure
+       => ActionM a b         -- ^The IO action to measure
        -> a                   -- ^Input value of the IO action
        -> Int                 -- ^Number of times the action is repeated
        -> IO (Double, Double) -- ^CPU- and wall clock time
@@ -208,20 +244,3 @@ timeIO f x n = do -- Record the start time.
                          , 1000 * (realToFrac $ diffUTCTime endWall startWall)
                          )
 
-
-strictReplicateM_ :: Int -> IO a  -> IO ()
-strictReplicateM_ n f = go n
-    where go 0 = return ()
-          go n = do x <- f
-                    x `pseq` go (n - 1)
-
--------------------------------------------------------------------------------
-
-picoToMilli :: Integer -> Double
-picoToMilli p = (fromInteger p) / 1e9
-
--------------------------------------------------------------------------------
-
-strictApplyM :: (Monad m, NFData b) => (a -> m b) -> a -> m b
-strictApplyM f x = do y <- f x
-                      return $ (y `using` rnf) `pseq` y

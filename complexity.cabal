@@ -15,11 +15,10 @@ description:
 
 library
   GHC-Options: -O2
-  build-depends:   base, time, parallel, data-accessor, pretty, colour, Chart, hstats, containers
+  build-depends:   base, time, parallel, data-accessor, pretty, colour, Chart, hstats
   exposed-modules: Test.Complexity
                    , Test.Complexity.Chart
                    , Test.Complexity.Pretty
-                   , Test.Complexity.Debug
 
 executable Prog
   GHC-Options: -O2

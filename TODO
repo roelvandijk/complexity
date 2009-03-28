@@ -1,0 +1,15 @@
+
+*** Fitting ***
+
+Usefull functions to try and fit on the data:
+
+constant     |  f(n) = a
+logarithmic  |  f(n) = (b * log n) + a
+linear       |  f(n) = (b * n) + a
+quadratic    |  f(n) = (c * n^2) + (b * n) + a
+exponential  |  f(n) = b^n
+
+
+*** Calculate overhead ***
+
+Overhead can be expressed as (measured time / total time).

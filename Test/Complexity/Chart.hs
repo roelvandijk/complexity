@@ -74,12 +74,12 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
                  $ plot_errbars_line_style  .> line_color ^= colour_light
                  $ defaultPlotErrBars
 
-          samples = timeStats stats
+          samples      = timeStats stats
           xs           = [fromIntegral inputSize | (SampleStats {inputSize}) <- samples]
-          ys_cpuMean2  = [stMean2  cpuTime       | (SampleStats {cpuTime})   <- samples]
-          ys_cpuMin    = [stMin    cpuTime       | (SampleStats {cpuTime})   <- samples]
-          ys_cpuMax    = [stMax    cpuTime       | (SampleStats {cpuTime})   <- samples]
-          vs_cpuStdDev = [stStdDev cpuTime       | (SampleStats {cpuTime})   <- samples]
+          ys_cpuMean2  = [statsMean2   cpuTime   | (SampleStats {cpuTime})   <- samples]
+          ys_cpuMin    = [statsMin     cpuTime   | (SampleStats {cpuTime})   <- samples]
+          ys_cpuMax    = [statsMax     cpuTime   | (SampleStats {cpuTime})   <- samples]
+          vs_cpuStdDev = [statsStdDev  cpuTime   | (SampleStats {cpuTime})   <- samples]
 
 quickToChart :: [EvalStats] -> IO ()
 quickToChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
