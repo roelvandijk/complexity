@@ -1,20 +1,21 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Test.Complexity.Pretty where
+module Test.Complexity.Pretty ( prettyStats
+                              , printStats
+                              ) where
 
 import Text.PrettyPrint
 import Text.Printf (printf)
 
 import Test.Complexity ( SampleStats(..)
-                       , EvalStats(..)
+                       , MeasurementStats(..)
                        , Stats(..)
                        )
 
-
-ppEvalStats :: EvalStats -> Doc
-ppEvalStats (EvalStats {..}) = text "desc:" <+> text desc
-                               $+$ text ""
-                               $+$ vcat (map ppSample timeStats)
+prettyStats :: MeasurementStats -> Doc
+prettyStats (MeasurementStats {..}) =   text "desc:" <+> text desc
+                                    $+$ text ""
+                                    $+$ vcat (map ppSample timeStats)
     where ppSample :: SampleStats -> Doc
           ppSample (SampleStats {..}) = (text . printf "%3i") inputSize <+> char '|'
                                         <+> text "cpu"  <+> ppStats cpuTime
@@ -25,7 +26,7 @@ ppEvalStats (EvalStats {..}) = text "desc:" <+> text desc
                                                [statsMin, statsMean2, statsMax, statsStdDev]
                                           )
 
-quickPrint :: [EvalStats] -> IO ()
-quickPrint = mapM_ (\s -> do putStrLn . render . ppEvalStats $ s
+printStats :: [MeasurementStats] -> IO ()
+printStats = mapM_ (\s -> do putStrLn . render . prettyStats $ s
                              putStrLn ""
                    )

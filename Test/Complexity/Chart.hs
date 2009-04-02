@@ -1,7 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns  #-}
 
-module Test.Complexity.Chart where
+module Test.Complexity.Chart ( statsToChart
+                             , showStatsChart
+                             ) where
 
 import Graphics.Rendering.Chart
 import Graphics.Rendering.Chart.Gtk
@@ -12,7 +14,7 @@ import Data.Colour
 import qualified Data.Colour.Names as CN
 import Data.Colour.SRGB
 
-import Test.Complexity ( EvalStats(..)
+import Test.Complexity ( MeasurementStats(..)
                        , SampleStats(..)
                        , Stats(..)
                        )
@@ -26,15 +28,15 @@ colourToCairo c = let rgb = toSRGB c
                            }
 
 
-statsToChart :: [(EvalStats, Colour Double)] -> Layout1 Double Double
+statsToChart :: [(MeasurementStats, Colour Double)] -> Layout1 Double Double
 statsToChart [] = defaultLayout1
-statsToChart xs = layout1_title ^= intercalate ", " [desc | (EvalStats {desc}, _) <- xs]
+statsToChart xs = layout1_title ^= intercalate ", " [desc | (MeasurementStats {desc}, _) <- xs]
                 $ layout1_plots ^= concat [map Left $ statsToPlots colour stats | (stats, colour) <- xs]
                 $ layout1_left_axis   .> laxis_title ^= "time (ms)"
                 $ layout1_bottom_axis .> laxis_title ^= "input size (n)"
                 $ defaultLayout1
 
-statsToPlots :: Colour Double -> EvalStats -> [Plot Double Double]
+statsToPlots :: Colour Double -> MeasurementStats -> [Plot Double Double]
 statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
                        --, plot_legend ^= [] $ toPlot cpuMin
                        --, plot_legend ^= [] $ toPlot cpuMax
@@ -70,19 +72,20 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
                     $ plot_fillbetween_style  ^= solidFillStyle colour_lightest
                     $ defaultPlotFillBetween
 
-          cpuErr = plot_errbars_values ^= [symErrPoint x y 0 e | (x, y, e) <- zip3 xs ys_cpuMean2 vs_cpuStdDev]
+          cpuErr = plot_errbars_values ^= [symErrPoint x y 0 e | (x, y, e) <- zip3 xs ys_cpuMean vs_cpuStdDev]
                  $ plot_errbars_line_style  .> line_color ^= colour_light
                  $ defaultPlotErrBars
 
           samples      = timeStats stats
           xs           = [fromIntegral inputSize | (SampleStats {inputSize}) <- samples]
+          ys_cpuMean   = [statsMean    cpuTime   | (SampleStats {cpuTime})   <- samples]
           ys_cpuMean2  = [statsMean2   cpuTime   | (SampleStats {cpuTime})   <- samples]
           ys_cpuMin    = [statsMin     cpuTime   | (SampleStats {cpuTime})   <- samples]
           ys_cpuMax    = [statsMax     cpuTime   | (SampleStats {cpuTime})   <- samples]
           vs_cpuStdDev = [statsStdDev  cpuTime   | (SampleStats {cpuTime})   <- samples]
 
-quickToChart :: [EvalStats] -> IO ()
-quickToChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
+showStatsChart :: [MeasurementStats] -> IO ()
+showStatsChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
     where colours = [ CN.blue
                     , CN.red
                     , CN.green

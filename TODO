@@ -10,6 +10,8 @@ quadratic    |  f(n) = (c * n^2) + (b * n) + a
 exponential  |  f(n) = b^n
 
 
+Let user provide set of functions to fit on data.
+
 *** Calculate overhead ***
 
 Overhead can be expressed as (measured time / total time).

@@ -20,6 +20,7 @@ library
                    , Test.Complexity.Chart
                    , Test.Complexity.Pretty
 
-executable Prog
+executable example
   GHC-Options: -O2
-  main-is: Prog.hs
+  build-depends: mersenne-random, containers
+  main-is: example.hs

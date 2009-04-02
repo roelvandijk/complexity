@@ -3,31 +3,31 @@ module Main where
 import Data.Function (fix)
 import Data.List (sort, unfoldr)
 import System.Environment (getArgs)
-import qualified Data.List as L
+import qualified Data.List   as L
+import qualified Data.Map    as M
+import qualified Data.IntMap as IM
+
+import System.Random.Mersenne
 
 import Test.Complexity
-import qualified Test.Complexity.Pretty as PP
-import qualified Test.Complexity.Chart  as Ch
+import Test.Complexity.Pretty (printStats)
+import Test.Complexity.Chart  (showStatsChart)
 
 -------------------------------------------------------------------------------
 
-benchCH :: [Measurable] -> Int -> [Integer] -> IO ()
-benchCH bs i ns = Ch.quickToChart =<< mapM (measureNs i ns) bs
+quickMeasure :: Measurer -> [Measurable] -> IO ()
+quickMeasure f xs =
+    do stats <- mapM f xs
+       printStats     stats
+       showStatsChart stats
 
-benchPP :: [Measurable] -> Int -> [Integer] -> IO ()
-benchPP bs i ns = PP.quickPrint =<< mapM (measureNs i ns) bs
+simpleMeasureNs :: Int -> [Integer] -> [Measurable] -> IO ()
+simpleMeasureNs i ns xs = quickMeasure (measureNs i ns) xs
 
-bench :: [Measurable] -> Int -> [Integer] -> IO ()
-bench bs i ns = do mStats <- mapM (measureNs i ns) bs
-                   PP.quickPrint   mStats
-                   Ch.quickToChart mStats
-
-bench' :: [Measurable] -> Int -> Double -> Double -> Integer -> IO ()
-bench' bs i timeInc maxTime maxN = let tMax = maxTime / (fromIntegral $ length bs)
-                                   in
-    do mStats <- mapM (smartMeasure i 10 timeInc tMax maxN) bs
-       PP.quickPrint   mStats
-       Ch.quickToChart mStats
+simpleSmartMeasure :: Int -> Double -> Double -> Integer -> [Measurable] -> IO ()
+simpleSmartMeasure i timeInc maxTime maxN xs =
+    let tMax = maxTime / (fromIntegral $ length xs)
+    in quickMeasure (smartMeasure i 10.0 timeInc tMax maxN) xs
 
 -------------------------------------------------------------------------------
 
@@ -38,10 +38,6 @@ mkIntList n = let n' = fromInteger n
 mkIntList2 :: Integer -> [Int]
 mkIntList2 n = take (fromInteger n) $ go 0
     where go x = x : go (1 + x `mod` 7)
-
-mkIntList3 :: Integer -> [Int]
-mkIntList3 n = take (fromInteger n) $ go 0
-    where go x = x : go (1 + x `mod` 31)
 
 -------------------------------------------------------------------------------
 
@@ -110,14 +106,35 @@ benchSorts  = benchBSort ++ benchQSort ++ benchSort
 
 -------------------------------------------------------------------------------
 
+mkMap :: Integer -> (Int, M.Map Int Int)
+mkMap n = let n' = fromInteger n
+          in (n' `div` 2, M.fromList [(k, k) | k <- [0 .. n']])
+
+mkMap2 :: Integer -> IO (Int, M.Map Int Int)
+mkMap2 n = let n' = fromInteger n
+           in do f <- random =<< getStdGen :: IO Double
+                 let x = floor $ f * (fromIntegral n)
+                 return (x, M.fromList [(k, k) | k <- [0 .. n']])
+
+mkIntMap :: Integer -> (Int, IM.IntMap Int)
+mkIntMap n = let n' = fromInteger n
+             in (n' `div` 2, IM.fromList [(k, k) | k <- [0 .. n']])
+
+benchMaps :: [Measurable]
+benchMaps = [ measurable "Data.Map pure"   (return . mkMap)    (return . uncurry M.lookup)
+            , measurable "Data.IntMap" (return . mkIntMap) (return . uncurry IM.lookup)
+            ]
+
+-------------------------------------------------------------------------------
+
+cmdLine :: [Measurable] -> IO ()
+cmdLine xs = do args <- getArgs
+                if length args == 2
+                  then let (a1:a2:_) = take 2 args
+                           maxTime   = (read a1) :: Double
+                           maxN      = (read a2) :: Integer
+                       in simpleSmartMeasure 20 1.1 maxTime maxN xs
+                  else putStrLn "Error: I need 2 arguments (max time and max input size)"
+
 main :: IO ()
-main = do args <- getArgs
-          if length args == 2
-            then let (a1:a2:_) = take 2 args
-                     maxTime   = (read a1) :: Double
-                     maxN      = (read a2) :: Integer
-                 in bench' stuff 5 1.1 maxTime maxN
-            else putStrLn "Error: I need 2 arguments (max time and max input size)"
-    where stuff = benchQSort
-
-
+main = cmdLine $ benchMaps
