@@ -15,27 +15,28 @@ import Test.Complexity.Chart  (showStatsChart)
 
 -------------------------------------------------------------------------------
 
-quickMeasure :: Measurer -> [Measurable] -> IO ()
+quickMeasure :: (Measurable -> IO MeasurementStats) -> [Measurable] -> IO ()
 quickMeasure f xs =
     do stats <- mapM f xs
        printStats     stats
        showStatsChart stats
 
-simpleMeasureNs :: Int -> [Integer] -> [Measurable] -> IO ()
-simpleMeasureNs i ns xs = quickMeasure (measureNs i ns) xs
+simpleMeasureNs :: [InputSize] -> Int -> Double -> Double -> [Measurable] -> IO ()
+simpleMeasureNs ns numSamples minSampleTime maxTime =
+    quickMeasure (measureNs ns numSamples minSampleTime maxTime)
 
-simpleSmartMeasure :: Int -> Double -> Double -> Integer -> [Measurable] -> IO ()
-simpleSmartMeasure i timeInc maxTime maxN xs =
+simpleSmartMeasure :: Double -> InputSize -> Int -> Double -> Double -> [Measurable] -> IO ()
+simpleSmartMeasure step maxN numSamples minSampleTime maxTime xs =
     let tMax = maxTime / (fromIntegral $ length xs)
-    in quickMeasure (smartMeasure i 10.0 timeInc tMax maxN) xs
+    in quickMeasure (smartMeasure step maxN numSamples minSampleTime tMax) xs
 
 -------------------------------------------------------------------------------
 
-mkIntList :: Integer -> [Int]
+mkIntList :: InputSize -> [Int]
 mkIntList n = let n' = fromInteger n
               in [n', n' - 1 .. 0]
 
-mkIntList2 :: Integer -> [Int]
+mkIntList2 :: InputSize -> [Int]
 mkIntList2 n = take (fromInteger n) $ go 0
     where go x = x : go (1 + x `mod` 7)
 
@@ -106,17 +107,17 @@ benchSorts  = benchBSort ++ benchQSort ++ benchSort
 
 -------------------------------------------------------------------------------
 
-mkMap :: Integer -> (Int, M.Map Int Int)
+mkMap :: InputSize -> (Int, M.Map Int Int)
 mkMap n = let n' = fromInteger n
           in (n' `div` 2, M.fromList [(k, k) | k <- [0 .. n']])
 
-mkMap2 :: Integer -> IO (Int, M.Map Int Int)
+mkMap2 :: InputSize -> IO (Int, M.Map Int Int)
 mkMap2 n = let n' = fromInteger n
            in do f <- random =<< getStdGen :: IO Double
                  let x = floor $ f * (fromIntegral n)
                  return (x, M.fromList [(k, k) | k <- [0 .. n']])
 
-mkIntMap :: Integer -> (Int, IM.IntMap Int)
+mkIntMap :: InputSize -> (Int, IM.IntMap Int)
 mkIntMap n = let n' = fromInteger n
              in (n' `div` 2, IM.fromList [(k, k) | k <- [0 .. n']])
 
@@ -132,9 +133,10 @@ cmdLine xs = do args <- getArgs
                 if length args == 2
                   then let (a1:a2:_) = take 2 args
                            maxTime   = (read a1) :: Double
-                           maxN      = (read a2) :: Integer
-                       in simpleSmartMeasure 20 1.1 maxTime maxN xs
+                           maxN      = (read a2) :: InputSize
+                       in simpleSmartMeasure 1.1 maxN 10 10 maxTime xs
+--                     in simpleMeasureNs [1..20] 10 10 120 xs
                   else putStrLn "Error: I need 2 arguments (max time and max input size)"
 
 main :: IO ()
-main = cmdLine $ benchMaps
+main = cmdLine benchSorts

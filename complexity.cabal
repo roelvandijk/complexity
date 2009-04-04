@@ -14,13 +14,13 @@ description:
   TODO
 
 library
-  GHC-Options: -O2
-  build-depends:   base, time, parallel, data-accessor, pretty, colour, Chart, hstats
+  GHC-Options: -O2 -Wall -fno-warn-name-shadowing
+  build-depends:   base, time, parallel, transformers, data-accessor, pretty, colour, Chart, hstats
   exposed-modules: Test.Complexity
                    , Test.Complexity.Chart
                    , Test.Complexity.Pretty
 
 executable example
-  GHC-Options: -O2
+  GHC-Options: -O2 -Wall -fno-warn-name-shadowing
   build-depends: mersenne-random, containers
   main-is: example.hs

@@ -48,29 +48,29 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
     where colour_normal   = colourToCairo c
           colour_dark     = colourToCairo $ blend 0.5 c CN.black
           colour_light    = colourToCairo $ blend 0.7 c CN.white
-          colour_lighter  = colourToCairo $ blend 0.5 c CN.white
-          colour_lightest = colourToCairo $ blend 0.3 c CN.white
+--           colour_lighter  = colourToCairo $ blend 0.5 c CN.white
+--           colour_lightest = colourToCairo $ blend 0.3 c CN.white
 
           cpuMean = plot_lines_values ^= [zip xs ys_cpuMean2]
                   $ plot_lines_style  .> line_color ^= colour_normal
                   $ plot_lines_title ^= desc stats
                   $ defaultPlotLines
 
-          cpuMin = plot_lines_values ^= [zip xs ys_cpuMin]
-                 $ plot_lines_style .> line_color ^= colour_lighter
-                 $ defaultPlotLines
+--           cpuMin = plot_lines_values ^= [zip xs ys_cpuMin]
+--                  $ plot_lines_style .> line_color ^= colour_lighter
+--                  $ defaultPlotLines
 
-          cpuMax = plot_lines_values ^= [zip xs ys_cpuMax]
-                 $ plot_lines_style .> line_color ^= colour_lighter
-                 $ defaultPlotLines
+--           cpuMax = plot_lines_values ^= [zip xs ys_cpuMax]
+--                  $ plot_lines_style .> line_color ^= colour_lighter
+--                  $ defaultPlotLines
 
           cpuMeanPts = plot_points_values ^= zip xs ys_cpuMean2
                      $ plot_points_style  ^= filledCircles 2 colour_dark
                      $ defaultPlotPoints
 
-          cpuMinMax = plot_fillbetween_values ^= zip xs (zip ys_cpuMin ys_cpuMax)
-                    $ plot_fillbetween_style  ^= solidFillStyle colour_lightest
-                    $ defaultPlotFillBetween
+--           cpuMinMax = plot_fillbetween_values ^= zip xs (zip ys_cpuMin ys_cpuMax)
+--                     $ plot_fillbetween_style  ^= solidFillStyle colour_lightest
+--                     $ defaultPlotFillBetween
 
           cpuErr = plot_errbars_values ^= [symErrPoint x y 0 e | (x, y, e) <- zip3 xs ys_cpuMean vs_cpuStdDev]
                  $ plot_errbars_line_style  .> line_color ^= colour_light
@@ -80,8 +80,8 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
           xs           = [fromIntegral inputSize | (SampleStats {inputSize}) <- samples]
           ys_cpuMean   = [statsMean    cpuTime   | (SampleStats {cpuTime})   <- samples]
           ys_cpuMean2  = [statsMean2   cpuTime   | (SampleStats {cpuTime})   <- samples]
-          ys_cpuMin    = [statsMin     cpuTime   | (SampleStats {cpuTime})   <- samples]
-          ys_cpuMax    = [statsMax     cpuTime   | (SampleStats {cpuTime})   <- samples]
+--           ys_cpuMin    = [statsMin     cpuTime   | (SampleStats {cpuTime})   <- samples]
+--           ys_cpuMax    = [statsMax     cpuTime   | (SampleStats {cpuTime})   <- samples]
           vs_cpuStdDev = [statsStdDev  cpuTime   | (SampleStats {cpuTime})   <- samples]
 
 showStatsChart :: [MeasurementStats] -> IO ()
