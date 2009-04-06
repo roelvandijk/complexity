@@ -7,21 +7,18 @@ module Test.Complexity.Pretty ( prettyStats
 import Text.PrettyPrint
 import Text.Printf (printf)
 
-import Test.Complexity ( SampleStats(..)
-                       , MeasurementStats(..)
+import Test.Complexity ( MeasurementStats(..)
+                       , Sample
                        , Stats(..)
                        )
 
 prettyStats :: MeasurementStats -> Doc
-prettyStats (MeasurementStats {..}) =   text "desc:" <+> text desc
+prettyStats (MeasurementStats {..}) =   text "desc:" <+> text msDesc
                                     $+$ text ""
-                                    $+$ vcat (map ppSample timeStats)
-    where ppSample :: SampleStats -> Doc
-          ppSample (SampleStats {..}) = (text . printf "%3i") inputSize <+> char '|'
-                                        <+> text "cpu"  <+> ppStats cpuTime
-                                        <+> char '|'
-                                        <+> text "wall" <+> ppStats wallTime
-          ppStats (Stats {..}) = int statsSamples
+                                    $+$ vcat (map ppSample msSamples)
+    where ppSample :: Sample -> Doc
+          ppSample (x, y) = (text . printf "%3i") x <+> char '|' <+> ppStats y
+          ppStats (Stats {..}) = int (length statsSamples)
                                  <+> hsep (map (text . printf "%7.3f")
                                                [statsMin, statsMean2, statsMax, statsStdDev]
                                           )

@@ -1,33 +1,48 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE LiberalTypeSynonyms       #-}
 {-# LANGUAGE PackageImports            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
-module Test.Complexity ( Action
+module Test.Complexity ( -- *Measurement subject
+                         Action
                        , InputGen
-                       , InputGenM
                        , InputSize
-                       , NextInputSize
-                       , NextInputSizeM
-                       , Measurable
-                       , measurable
-                       , pureMeasurable
 
+                         -- *Experiments
+                       , Experiment
+                       , experiment
+                       , pureExperiment
+                       , performExperiment
+
+                         -- *Measurement strategy
+                       , Strategy
+                       , simpleLinearHeuristic
+                       , inputSizeFromList
+
+                         -- *Sensors
+                       , Sensor
+                       , timeSensor
+                       , cpuTimeSensor
+                       , wallClockTimeSensor
+
+                         -- *Measurement results
                        , MeasurementStats(..)
-                       , SampleStats(..)
+                       , Sample
                        , Stats(..)
-
-                       , measure
-                       , measureNs
-                       , smartMeasure
                        ) where
 
+-------------------------------------------------------------------------------
+-- Imports
+-------------------------------------------------------------------------------
+
 -- Package-qualified import because of Chart, which exports stuff from mtl.
-import "transformers" Control.Monad.Trans  (MonadIO, liftIO)
+import "transformers" Control.Monad.Trans (MonadIO, liftIO)
 
 import Control.Monad                  (liftM)
 import Control.Monad.Trans.State.Lazy (StateT, evalStateT, get, put)
 import Control.Parallel.Strategies    (NFData)
-import Data.List                      (sortBy)
+import Data.List                      (genericReplicate, sortBy)
 import Data.Function                  (on)
 import Data.Time.Clock                (getCurrentTime, diffUTCTime)
 import Math.Statistics                (stddev, mean)
@@ -36,226 +51,197 @@ import System.Timeout                 (timeout)
 import Test.Complexity.Misc
 
 -------------------------------------------------------------------------------
--- Types
+-- Measurement subject
 -------------------------------------------------------------------------------
 
 -- |An Action is a function of which aspects of its execution can be measured.
 type Action a b = a -> IO b
 
--- |A InputGen produces a value of a certain size.
-type InputGen  a = InputSize -> a
-type InputGenM a = InputSize -> IO a
+-- |A input generator produces a value of a certain size.
+type InputGen a = InputSize -> a
 
 -- |The size of an input on which an action is applied.
 type InputSize = Integer
 
--- |Something that can be measured. Contains all information that is necessary
---  to perform a measurement.
-data Measurable = forall a b. (NFData a, NFData b) => Measurable String (InputGenM a) (Action a b)
+-------------------------------------------------------------------------------
+-- Experiments
+-------------------------------------------------------------------------------
 
-measurable :: (NFData a, NFData b) => String -> InputGenM a -> Action a b -> Measurable
-measurable = Measurable
+-- |A method of investigating the causal relationship between the size
+--  of the input of an action and some aspect of the execution of the action.
+data Experiment = forall a b. NFData a =>
+                  Experiment String (Sensor a b) (InputGen (IO a)) (Action a b)
 
--- |Construct a Measurable from a pure function.
-pureMeasurable :: (NFData a, NFData b) => String -> InputGen a -> (a -> b) -> Measurable
-pureMeasurable desc gen f = Measurable desc (return . gen) (return . f)
+experiment :: NFData a => String -> (Sensor a b) -> InputGen (IO a) -> (Action a b) -> Experiment
+experiment = Experiment
 
--- |Function that gives the size of the next input on which the action that is
---  being measured should be applied.
-type NextInputSizeM m = [SampleStats] -> Double -> m (Maybe InputSize)
-type NextInputSize    = [SampleStats] -> Double -> Maybe InputSize
-
-liftNextInputSize :: Monad m => NextInputSize -> NextInputSizeM m
-liftNextInputSize nis xs remTime = return $ nis xs remTime
-
--- |Statistics about a measurement performed on many inputs.
-data MeasurementStats = MeasurementStats { desc      :: String
-                                         , timeStats :: [SampleStats]
-                                         } deriving Show
-
--- |Statistics about the sampling of a single input value.
-data SampleStats = SampleStats { inputSize :: InputSize
-                               , cpuTime   :: Stats
-                                 -- ^CPU time statistics
-                               , wallTime  :: Stats
-                                 -- ^Wall clock time statistics
-                               } deriving Show
-
-data Stats = Stats { statsMin     :: Double
-                   , statsMax     :: Double
-                   , statsStdDev  :: Double
-                   , statsMean    :: Double
-                   , statsMean2   :: Double
-                   -- ^Mean of all samples that lie within one
-                   --  standard deviation from the mean.
-                   , statsSamples :: Int
-                   -- ^Number of samples from which these statistics
-                   --  are derived.
-                   } deriving Show
+pureExperiment :: NFData a => String -> (Sensor a b) -> InputGen a -> (a -> b) -> Experiment
+pureExperiment desc sensor gen f = experiment desc sensor (return . gen) (return . f)
 
 -------------------------------------------------------------------------------
 
--- Precondition: not $ null xs
-stats :: [Double] -> Stats
-stats xs = Stats { statsMin     = minimum xs
-                 , statsMax     = maximum xs
-                 , statsStdDev  = stddev_xs
-                 , statsMean    = mean_xs
-                 , statsMean2   = mean2_xs
-                 , statsSamples = length xs
-                 }
-    where stddev_xs = stddev xs
-          mean_xs   = mean xs
-          mean2_xs  = let xs' = filter (\x -> diff mean_xs x < stddev_xs) xs
-                      in if null xs'
-                         then mean_xs
-                         else mean xs'
-
--------------------------------------------------------------------------------
-
-smartMeasure :: Double    -- ^Time increment step size
-             -> InputSize -- ^Maximum input size
-             -> Int       -- ^Number of samples per input size
-             -> Double    -- ^Minimum sample time (in CPU milliseconds)
-             -> Double    -- ^Maximum measure time in seconds (wall clock time)
-             -> Measurable
-             -> IO MeasurementStats
-smartMeasure step maxSize = measure (liftNextInputSize $ simpleLinearHeuristic step maxSize) id
-
-simpleLinearHeuristic :: Double -> InputSize -> NextInputSize
-simpleLinearHeuristic step maxSize xs r | n < maxSize = Just n
-                                        | otherwise   = Nothing
-    where
-      n = simple step xs r
-
-      simple _    []        _                  = 0
-      simple _    [_]       _                  = 1
-      simple step (x1:x2:_) _ | nextN <= n1    = n1 + dN
-                              | nextN > 2 * n1 = 2 * n1
-                              | otherwise      = nextN
-          where
-            t1 = statsMean2 $ cpuTime x1
-            t2 = statsMean2 $ cpuTime x2
-            n1 = inputSize x1
-            n2 = inputSize x2
-            dN = n1 - n2
-            dT = t1 - t2
-            nextN = ceiling $ (fromInteger dN / dT) * (step * t1)
-
-measureNs :: [InputSize]
-          -> Int    -- ^Number of samples per input size
-          -> Double -- ^Minimum sample time (in CPU milliseconds)
-          -> Double -- ^Maximum measure time in seconds (wall clock time)
-          -> Measurable
-          -> IO MeasurementStats
-measureNs ns = measure nextFromList $ \s -> evalStateT s ns
-    where
-      nextFromList :: NextInputSizeM (StateT [InputSize] IO)
-      nextFromList _ _ = do ns <- get
-                            case ns of
-                              []      -> return Nothing
-                              (n:ns') -> do put ns'
-                                            return $ Just n
-
--------------------------------------------------------------------------------
-
-measure :: forall m. MonadIO m
-        => NextInputSizeM m
-        -> (m MeasurementStats -> IO MeasurementStats)
-        -> Int       -- ^Number of samples per input size
-        -> Double    -- ^Minimum sample time (in CPU milliseconds)
-        -> Double    -- ^Maximum measure time in seconds (wall clock time)
-        -> Measurable
+performExperiment :: Strategy MeasurementStats
+        -> Integer -- ^Number of samples per input size.
+        -> Double  -- ^Maximum measure time in seconds (wall clock time).
+        -> Experiment
         -> IO MeasurementStats
-measure next run numSamples minSampleTime maxMeasureTime (Measurable desc gen action) =
+performExperiment (Strategy next run) numSamples maxMeasureTime (Experiment desc sensor gen action) =
     do startTime <- getCurrentTime
 
-       let measureLoop :: [SampleStats] -> m [SampleStats]
-           measureLoop xs = do curTime <- liftIO getCurrentTime
+       let measureLoop xs = do curTime <- liftIO getCurrentTime
                                let elapsedTime = diffUTCTime curTime startTime
                                let remTime = maxMeasureTime - realToFrac elapsedTime
 
                                n' <- next xs remTime
                                case n' of
-                                 Just n | remTime > 0 ->
-                                            liftIO (timeout (round $ remTime * 1e6) $ measureSample n)
-                                            >>= maybe (return xs) (\x -> measureLoop (x:xs))
+                                 Just n | remTime > 0 -> liftIO (timeout (round $ remTime * 1e6) $ measureSample n)
+                                                         >>= maybe (return xs) (\x -> measureLoop (x:xs))
                                  _ -> return xs
 
-       run $ liftM ((MeasurementStats desc) . (sortBy (compare `on` inputSize))) $ measureLoop []
+       run $ liftM ((MeasurementStats desc) . (sortBy (compare `on` fst)))
+                   $ measureLoop []
     where
-      measureSample :: InputSize -> IO SampleStats
-      measureSample = measureAction gen action numSamples minSampleTime
-
--------------------------------------------------------------------------------
+      measureSample :: InputSize -> IO Sample
+      measureSample = measureAction gen action sensor numSamples
 
 -- |Measure the time needed to evaluate an action when applied to an input of
 --  size 'n'.
-measureAction :: (NFData a, NFData b)
-              => InputGenM a
-              -> Action a b
-              -> Int       -- ^Number of samples
-              -> Double    -- ^Minimum sample time (in CPU milliseconds)
-              -> InputSize -- ^Size of the input value (n)
-              -> IO SampleStats
-measureAction gen action numSamples minSampleTime inputSize = fmap analyze $ measure
+measureAction :: NFData a
+              => InputGen (IO a) -> Action a b -> Sensor a b -> Integer -> InputSize -> IO Sample
+measureAction gen action sensor numSamples inputSize = fmap (\ys -> (inputSize, calculateStats ys))
+                                                            measure
     where
-      analyze :: [(Double, Double)] -> SampleStats
-      analyze ts = let (cpuTimes, wallTimes) = unzip ts
-                   in SampleStats { inputSize = inputSize
-                                  , cpuTime   = stats cpuTimes
-                                  , wallTime  = stats wallTimes
-                                  }
+      measure :: IO [Double]
+      measure = gen inputSize >>=| \x -> mapM (sensor action) $ genericReplicate numSamples x
 
-      measure :: IO [(Double, Double)]
-      measure = gen inputSize >>=| \x ->
-                  mapM (sample minSampleTime action)
-                       $ replicate numSamples x
+-------------------------------------------------------------------------------
+-- Measurement strategy
+-------------------------------------------------------------------------------
+
+data Strategy a = forall m. MonadIO m =>
+                  Strategy ([Sample] -> Double -> m (Maybe InputSize))
+                            (m a -> IO a)
+
+
+simpleLinearHeuristic :: Double -> InputSize -> Strategy a
+simpleLinearHeuristic step maxSize = Strategy (\xs _ -> return $ f xs) id
+    where
+    f :: [Sample] -> Maybe InputSize
+    f xs | n < maxSize = Just n
+         | otherwise   = Nothing
+        where
+          n = simple step xs
+
+          simple _    []                                = 0
+          simple _    [_]                               = 1
+          simple step ((x2,y2):(x1,y1):_) | x3 <= x2    = x2 + dx
+                                          | x3 > 2 * x2 = 2 * x2
+                                          | otherwise   = x3
+              where
+                t2 = statsMean2 $ y2
+                t1 = statsMean2 $ y1
+                dx = x2 - x1
+                dt = t2 - t1
+                x3 = ceiling $ (fromInteger dx / dt) * (step * t2)
+
+inputSizeFromList :: [InputSize] -> Strategy a
+inputSizeFromList ns = Strategy (\_ _ -> m) (\s -> evalStateT s ns)
+    where
+      m :: StateT [InputSize] IO (Maybe InputSize)
+      m = do xs <- get
+             case xs of
+               []      -> return Nothing
+               (x:xs') -> do put xs'
+                             return $ Just x
+
+-------------------------------------------------------------------------------
+-- Sensors
+-------------------------------------------------------------------------------
+
+-- |Function that measures some aspect of the execution of an action.
+type Sensor a b = (Action a b) -> a -> IO Double
 
 -- |Measure the execution time of an action.
 --
---  Actions will be executed repeatedly until the cumulative CPU time exceeds
---  minSampleTime milliseconds or until the maximum number of iterations is
---  reached. The final result will be the cumulative CPU and wall clock times
---  divided by the number of iterations.  In order to get sufficient precision
---  the minSampleTime should be set to at least a few times the
---  cpuTimePrecision. If you want to know only the execution time of the
---  supplied action and not the evaluation time of its input value you should
---  ensure that the input value is in head normal form.
-sample :: NFData b
-       => Double           -- ^Minimum run time (in milliseconds)
-       -> Action a b       -- ^The action to measure
-       -> a                -- ^Input value
-       -> IO (Double, Double)
-sample minSampleTime action x = go 1 0 0 0
+--  Actions will be executed repeatedly until the cumulative time exceeds
+--  minSampleTime milliseconds. The final result will be the cumulative time
+--  divided by the number of iterations. In order to get sufficient precision
+--  the minSampleTime should be set to at least a few times the time source's
+--  precision. If you want to know only the execution time of the supplied
+--  action and not the evaluation time of its input value you should ensure
+--  that the input value is in head normal form.
+timeSensor :: NFData b
+           => IO t               -- ^Current time.
+           -> (t -> t -> Double) -- ^Time difference.
+           -> Double             -- ^Minimum run time (in milliseconds).
+           -> Sensor a b
+timeSensor t d minSampleTime action x = go 1 0 0
     where
-      go n totIter totCpuT totWallT =
+      go n totIter totCpuT =
           do -- Time n iterations of action applied on x.
-             (curCpuT, curWallT) <- timeIO action x n
+             curCpuT <- timeIO t d n action x
              -- Calculate new cumulative values.
              let totCpuT'  = totCpuT  + curCpuT
-                 totWallT' = totWallT + curWallT
                  totIter'  = totIter + n
              if totCpuT' >= minSampleTime
                then let numIter = fromIntegral totIter'
-                    in return (totCpuT' / numIter, totWallT' / numIter)
-               else go (2 * n) totIter' totCpuT' totWallT'
+                    in return $ totCpuT' / numIter
+               else go (2 * n) totIter' totCpuT'
 
 -- |Time the evaluation of an IO action.
 timeIO :: NFData b
-       => Action a b          -- ^The IO action to measure
-       -> a                   -- ^Input value of the IO action
-       -> Int                 -- ^Number of times the action is repeated
-       -> IO (Double, Double) -- ^CPU- and wall clock time
-timeIO f x n = do -- Record the start time.
-                  startWall <- getCurrentTime
-                  startCPU  <- getCPUTime
-                  -- Run the action.
-                  strictReplicateM_ n $ f x
-                  -- Record the finish time.
-                  endCPU  <- getCPUTime
-                  endWall <- getCurrentTime
-                  return ( picoToMilli $ endCPU - startCPU
-                         , 1000 * (realToFrac $ diffUTCTime endWall startWall)
-                         )
+      => IO t               -- ^Measure current time.
+      -> (t -> t -> Double) -- ^Difference between measured times.
+      -> Int                -- ^Number of times the action is repeated.
+      -> Sensor a b
+timeIO t d n f x = do tStart  <- t
+                      strictReplicateM_ n $ f x
+                      tEnd <- t
+                      return $ d tEnd tStart
 
+cpuTimeSensor :: NFData b => Double -> Sensor a b
+cpuTimeSensor = timeSensor getCPUTime (\x y -> picoToMilli $ x - y)
+
+wallClockTimeSensor :: NFData b => Double -> Sensor a b
+wallClockTimeSensor = timeSensor getCurrentTime (\x y -> 1000 * (realToFrac $ diffUTCTime x y))
+
+-------------------------------------------------------------------------------
+-- Measurement results
+-------------------------------------------------------------------------------
+
+-- |Statistics about a measurement performed on many inputs.
+data MeasurementStats = MeasurementStats { msDesc    :: String
+                                         , msSamples :: [Sample]
+                                         } deriving Show
+
+-- |Statistics about the sampling of a single input value.
+type Sample = (InputSize, Stats)
+
+data Stats = Stats { statsMin     :: Double -- ^Minimum value.
+                   , statsMax     :: Double -- ^Maximum value.
+                   , statsStdDev  :: Double -- ^Standard deviation
+                   , statsMean    :: Double -- ^Arithmetic mean.
+                   , statsMean2   :: Double
+                   -- ^Mean of all samples that lie within one
+                   --  standard deviation from the mean.
+                   , statsSamples :: [Double] -- ^Samples from which these statistics are derived.
+                   } deriving Show
+
+-------------------------------------------------------------------------------
+-- Misc
+-------------------------------------------------------------------------------
+
+-- Precondition: not $ null xs
+calculateStats :: [Double] -> Stats
+calculateStats xs = Stats { statsMin     = minimum xs
+                          , statsMax     = maximum xs
+                          , statsStdDev  = stddev_xs
+                          , statsMean    = mean_xs
+                          , statsMean2   = mean2_xs
+                          , statsSamples = xs
+                          }
+    where stddev_xs = stddev xs
+          mean_xs   = mean xs
+          mean2_xs | null inStddev = mean_xs
+                   | otherwise     = mean inStddev
+          inStddev = filter (\x -> diff mean_xs x < stddev_xs) xs

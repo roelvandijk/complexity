@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 
 module Test.Complexity.Chart ( statsToChart
+                             , quickStatsToChart
                              , showStatsChart
                              ) where
 
@@ -15,7 +16,6 @@ import qualified Data.Colour.Names as CN
 import Data.Colour.SRGB
 
 import Test.Complexity ( MeasurementStats(..)
-                       , SampleStats(..)
                        , Stats(..)
                        )
 
@@ -27,14 +27,30 @@ colourToCairo c = let rgb = toSRGB c
                            , c_b = channelBlue  rgb
                            }
 
-
 statsToChart :: [(MeasurementStats, Colour Double)] -> Layout1 Double Double
 statsToChart [] = defaultLayout1
-statsToChart xs = layout1_title ^= intercalate ", " [desc | (MeasurementStats {desc}, _) <- xs]
+statsToChart xs = layout1_title ^= intercalate ", " [msDesc | (MeasurementStats {msDesc}, _) <- xs]
                 $ layout1_plots ^= concat [map Left $ statsToPlots colour stats | (stats, colour) <- xs]
                 $ layout1_left_axis   .> laxis_title ^= "time (ms)"
                 $ layout1_bottom_axis .> laxis_title ^= "input size (n)"
                 $ defaultLayout1
+
+quickStatsToChart :: [MeasurementStats] -> Layout1 Double Double
+quickStatsToChart xs = statsToChart $ zip xs $ cycle colours
+    where colours = [ CN.blue
+                    , CN.red
+                    , CN.green
+                    , CN.darkgoldenrod
+                    , CN.orchid
+                    , CN.sienna
+                    , CN.darkcyan
+                    , CN.olivedrab
+                    , CN.silver
+                    ]
+
+showStatsChart :: [MeasurementStats] -> IO ()
+showStatsChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
+
 
 statsToPlots :: Colour Double -> MeasurementStats -> [Plot Double Double]
 statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
@@ -53,7 +69,7 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
 
           cpuMean = plot_lines_values ^= [zip xs ys_cpuMean2]
                   $ plot_lines_style  .> line_color ^= colour_normal
-                  $ plot_lines_title ^= desc stats
+                  $ plot_lines_title ^= msDesc stats
                   $ defaultPlotLines
 
 --           cpuMin = plot_lines_values ^= [zip xs ys_cpuMin]
@@ -76,22 +92,13 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
                  $ plot_errbars_line_style  .> line_color ^= colour_light
                  $ defaultPlotErrBars
 
-          samples      = timeStats stats
-          xs           = [fromIntegral inputSize | (SampleStats {inputSize}) <- samples]
-          ys_cpuMean   = [statsMean    cpuTime   | (SampleStats {cpuTime})   <- samples]
-          ys_cpuMean2  = [statsMean2   cpuTime   | (SampleStats {cpuTime})   <- samples]
---           ys_cpuMin    = [statsMin     cpuTime   | (SampleStats {cpuTime})   <- samples]
---           ys_cpuMax    = [statsMax     cpuTime   | (SampleStats {cpuTime})   <- samples]
-          vs_cpuStdDev = [statsStdDev  cpuTime   | (SampleStats {cpuTime})   <- samples]
+          ps      = msSamples stats
+          xs           = map (fromIntegral . fst) ps
+          ys_cpuMean   = map (statsMean    . snd) ps
+          ys_cpuMean2  = map (statsMean2   . snd) ps
+--        ys_cpuMin    = map (statsMin     . snd) ps
+--        ys_cpuMax    = map (statsMax     . snd) ps
+          vs_cpuStdDev = map (statsStdDev  . snd) ps
 
 showStatsChart :: [MeasurementStats] -> IO ()
-showStatsChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
-    where colours = [ CN.blue
-                    , CN.red
-                    , CN.green
-                    , CN.darkgoldenrod
-                    , CN.orchid
-                    , CN.sienna
-                    , CN.darkcyan
-                    , CN.olivedrab
-                    ] ++ repeat CN.silver
+showStatsChart xs = renderableToWindow (toRenderable $ quickStatsToChart xs) 800 600

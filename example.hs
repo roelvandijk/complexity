@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Main where
 
 import Data.Function (fix)
@@ -15,20 +17,20 @@ import Test.Complexity.Chart  (showStatsChart)
 
 -------------------------------------------------------------------------------
 
-quickMeasure :: (Measurable -> IO MeasurementStats) -> [Measurable] -> IO ()
-quickMeasure f xs =
-    do stats <- mapM f xs
-       printStats     stats
-       showStatsChart stats
+quickPerformExps :: (a -> IO MeasurementStats) -> [a] -> IO ()
+quickPerformExps f xs = do stats <- mapM f xs
+                           printStats     stats
+                           showStatsChart stats
 
-simpleMeasureNs :: [InputSize] -> Int -> Double -> Double -> [Measurable] -> IO ()
-simpleMeasureNs ns numSamples minSampleTime maxTime =
-    quickMeasure (measureNs ns numSamples minSampleTime maxTime)
+simpleMeasureNs :: [InputSize] -> Integer -> Double -> [Experiment] -> IO ()
+simpleMeasureNs ns numSamples maxTime =
+    quickPerformExps (performExperiment (inputSizeFromList ns) numSamples maxTime)
 
-simpleSmartMeasure :: Double -> InputSize -> Int -> Double -> Double -> [Measurable] -> IO ()
-simpleSmartMeasure step maxN numSamples minSampleTime maxTime xs =
+
+simpleSmartMeasure :: Double -> InputSize -> Integer -> Double -> [Experiment] -> IO ()
+simpleSmartMeasure step maxN numSamples maxTime xs =
     let tMax = maxTime / (fromIntegral $ length xs)
-    in quickMeasure (smartMeasure step maxN numSamples minSampleTime tMax) xs
+    in quickPerformExps (performExperiment (simpleLinearHeuristic step maxN) numSamples tMax) xs
 
 -------------------------------------------------------------------------------
 
@@ -77,13 +79,13 @@ fib6 :: Integer -> Integer
 fib6 n = fibs !! fromInteger n
     where fibs = map fst $ iterate (\(a,b) -> (b, a+b)) (0,1)
 
-benchFibs :: [Measurable]
-benchFibs = [ pureMeasurable "fib1" id fib1
-            , pureMeasurable "fib2" id fib2
-            , pureMeasurable "fib3" id fib3
-            , pureMeasurable "fib4" id fib4
-            , pureMeasurable "fib5" id fib5
-            , pureMeasurable "fib6" id fib6
+benchFibs :: [Experiment]
+benchFibs = [ pureExperiment "fib1" (cpuTimeSensor 10) id fib1
+            , pureExperiment "fib2" (cpuTimeSensor 10) id fib2
+            , pureExperiment "fib3" (cpuTimeSensor 10) id fib3
+            , pureExperiment "fib4" (cpuTimeSensor 10) id fib4
+            , pureExperiment "fib5" (cpuTimeSensor 10) id fib5
+            , pureExperiment "fib6" (cpuTimeSensor 10) id fib6
             ]
 
 -------------------------------------------------------------------------------
@@ -99,11 +101,16 @@ qsort :: Ord a => [a] -> [a]
 qsort []     = []
 qsort (x:xs) = qsort (filter (< x) xs) ++ [x] ++ qsort (filter (>= x) xs)
 
-benchBSort, benchQSort, benchSort, benchSorts :: [Measurable]
-benchBSort  = [pureMeasurable "bubble sort"    mkIntList2 bsort]
-benchQSort  = [pureMeasurable "quick sort"     mkIntList2 qsort]
-benchSort   = [pureMeasurable "Data.List.sort" mkIntList2 sort]
+benchBSort, benchQSort, benchSort, benchSorts :: [Experiment]
+benchBSort  = [pureExperiment "bubble sort"    (cpuTimeSensor 10) mkIntList2 bsort]
+benchQSort  = [pureExperiment "quick sort"     (cpuTimeSensor 10) mkIntList2 qsort]
+benchSort   = [pureExperiment "Data.List.sort" (cpuTimeSensor 10) mkIntList2 sort]
 benchSorts  = benchBSort ++ benchQSort ++ benchSort
+
+zoei :: [Experiment]
+zoei = [ pureExperiment "quick sort (CPU)"  (cpuTimeSensor       10) mkIntList2 qsort
+       , pureExperiment "quick sort (Wall)" (wallClockTimeSensor 10) mkIntList2 qsort
+       ]
 
 -------------------------------------------------------------------------------
 
@@ -121,22 +128,22 @@ mkIntMap :: InputSize -> (Int, IM.IntMap Int)
 mkIntMap n = let n' = fromInteger n
              in (n' `div` 2, IM.fromList [(k, k) | k <- [0 .. n']])
 
-benchMaps :: [Measurable]
-benchMaps = [ measurable "Data.Map pure"   (return . mkMap)    (return . uncurry M.lookup)
-            , measurable "Data.IntMap" (return . mkIntMap) (return . uncurry IM.lookup)
+benchMaps :: [Experiment]
+benchMaps = [ pureExperiment "Data.Map pure" (cpuTimeSensor 10) mkMap    (uncurry M.lookup)
+            , pureExperiment "Data.IntMap"   (cpuTimeSensor 10) mkIntMap (uncurry IM.lookup)
             ]
 
 -------------------------------------------------------------------------------
 
-cmdLine :: [Measurable] -> IO ()
+cmdLine :: [Experiment] -> IO ()
 cmdLine xs = do args <- getArgs
                 if length args == 2
                   then let (a1:a2:_) = take 2 args
                            maxTime   = (read a1) :: Double
                            maxN      = (read a2) :: InputSize
-                       in simpleSmartMeasure 1.1 maxN 10 10 maxTime xs
---                     in simpleMeasureNs [1..20] 10 10 120 xs
+                       in simpleSmartMeasure 1.1 maxN 10 maxTime xs
+--                     in simpleMeasureNs [1..20] 10 120 xs
                   else putStrLn "Error: I need 2 arguments (max time and max input size)"
 
 main :: IO ()
-main = cmdLine benchSorts
+main = cmdLine zoei
