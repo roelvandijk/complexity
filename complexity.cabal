@@ -3,7 +3,7 @@ version:       0.1
 cabal-version: >= 1.6
 build-type:    Simple
 stability:     experimental
-author:        Roel van Dij
+author:        Roel van Dijk
 maintainer:    vandijk.roel@gmail.com
 copyright:     (c) 2009 Roel van Dijk
 license:       BSD3
