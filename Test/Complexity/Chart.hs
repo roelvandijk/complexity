@@ -15,9 +15,9 @@ import Data.Colour
 import qualified Data.Colour.Names as CN
 import Data.Colour.SRGB
 
-import Test.Complexity ( MeasurementStats(..)
-                       , Stats(..)
-                       )
+import Test.Complexity.Base ( MeasurementStats(..)
+                            , Stats(..)
+                            )
 
 
 colourToCairo :: Colour Double -> Color
@@ -47,10 +47,6 @@ quickStatsToChart xs = statsToChart $ zip xs $ cycle colours
                     , CN.olivedrab
                     , CN.silver
                     ]
-
-showStatsChart :: [MeasurementStats] -> IO ()
-showStatsChart xs = renderableToWindow (toRenderable $ statsToChart $ zip xs colours) 800 600
-
 
 statsToPlots :: Colour Double -> MeasurementStats -> [Plot Double Double]
 statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
@@ -101,4 +97,4 @@ statsToPlots c stats = --[ plot_legend ^= [] $ toPlot cpuMinMax
           vs_cpuStdDev = map (statsStdDev  . snd) ps
 
 showStatsChart :: [MeasurementStats] -> IO ()
-showStatsChart xs = renderableToWindow (toRenderable $ quickStatsToChart xs) 800 600
+showStatsChart xs = renderableToWindow (toRenderable $ quickStatsToChart xs) 640 480

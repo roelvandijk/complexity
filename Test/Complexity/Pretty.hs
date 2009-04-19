@@ -7,10 +7,10 @@ module Test.Complexity.Pretty ( prettyStats
 import Text.PrettyPrint
 import Text.Printf (printf)
 
-import Test.Complexity ( MeasurementStats(..)
-                       , Sample
-                       , Stats(..)
-                       )
+import Test.Complexity.Base ( MeasurementStats(..)
+                            , Sample
+                            , Stats(..)
+                            )
 
 prettyStats :: MeasurementStats -> Doc
 prettyStats (MeasurementStats {..}) =   text "desc:" <+> text msDesc

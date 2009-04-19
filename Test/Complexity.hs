@@ -1,247 +1,119 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LiberalTypeSynonyms       #-}
-{-# LANGUAGE PackageImports            #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
+{-|
+This module provides a collection of functions that enable you to
+measure the algorithmic complexity of arbitrary functions.
 
-module Test.Complexity ( -- *Measurement subject
-                         Action
-                       , InputGen
-                       , InputSize
+Let's say you want to measure the time complexity of 'qsort':
 
-                         -- *Experiments
-                       , Experiment
-                       , experiment
-                       , pureExperiment
-                       , performExperiment
+@
+  qsort :: Ord a => [a] -> [a]
+  qsort []     = []
+  qsort (x:xs) = qsort (filter (\< x) xs) ++ [x] ++ qsort (filter (>= x) xs)
+@
 
-                         -- *Measurement strategy
-                       , Strategy
-                       , simpleLinearHeuristic
-                       , inputSizeFromList
+We want to now the time complexity of 'qsort' in terms of the size of
+its 'InputSize' \'n\'. First we have to express what \'n\' is. We do this by
+writing an 'InputGen':
 
-                         -- *Sensors
-                       , Sensor
-                       , timeSensor
-                       , cpuTimeSensor
-                       , wallClockTimeSensor
+@
+  -- Very simple pseudo random number generator.
+  pseudoRnd :: Int -> Int -> Int -> Int -> [Int]
+  pseudoRnd p1 p2 n d = iterate (\x -> (p1 * x + p2) `mod` n) d
+@
 
-                         -- *Measurement results
-                       , MeasurementStats(..)
-                       , Sample
-                       , Stats(..)
-                       ) where
+@
+  genIntList :: 'InputGen' [Int]
+  genIntList n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ 31 - 1) 79
+@
 
--------------------------------------------------------------------------------
--- Imports
--------------------------------------------------------------------------------
+The function 'genIntList' now generates a pseudo random list of Ints
+of length \'n\'.
 
--- Package-qualified import because of Chart, which exports stuff from mtl.
-import "transformers" Control.Monad.Trans (MonadIO, liftIO)
+Next we have to specify what aspect of 'qsort' we want to
+measure. Since we are interested in the time complexity we use a CPU
+time sensor:
 
-import Control.Monad                  (liftM)
-import Control.Monad.Trans.State.Lazy (StateT, evalStateT, get, put)
-import Control.Parallel.Strategies    (NFData)
-import Data.List                      (genericReplicate, sortBy)
-import Data.Function                  (on)
-import Data.Time.Clock                (getCurrentTime, diffUTCTime)
-import Math.Statistics                (stddev, mean)
-import System.CPUTime                 (getCPUTime)
-import System.Timeout                 (timeout)
-import Test.Complexity.Misc
+@
+  mySensor = 'cpuTimeSensor' 10
+@
 
--------------------------------------------------------------------------------
--- Measurement subject
--------------------------------------------------------------------------------
+The 'cpuTimeSensor' is a 'Sensor' which measures CPU time. It takes
+one argument which is a time in milliseconds. This is the minimum
+execution time for an 'Action' which is measured. If the action doesn't
+take more than 10 ms to execute it will be repeated until it
+does. This allows us to measure actions which execute much faster than
+the minimum measurable CPU time difference.
 
--- |An Action is a function of which aspects of its execution can be measured.
-type Action a b = a -> IO b
+Now we can create an 'Experiment':
 
--- |A input generator produces a value of a certain size.
-type InputGen a = InputSize -> a
+@
+  expQSort = 'pureExperiment' \"quicksort\" mySensor genIntList qsort
+@
 
--- |The size of an input on which an action is applied.
-type InputSize = Integer
+This is an experiment which measures the CPU time it takes to apply
+the function 'qsort' on an input generate by 'genIntList'.
 
--------------------------------------------------------------------------------
--- Experiments
--------------------------------------------------------------------------------
+Before you can perform the experiment you need to decide which input
+sizes you want to measure and when to stop. These ideas are contained
+in a 'Strategy'. We'll use the 'simpleLinearHeuristic':
 
--- |A method of investigating the causal relationship between the size
---  of the input of an action and some aspect of the execution of the action.
-data Experiment = forall a b. NFData a =>
-                  Experiment String (Sensor a b) (InputGen (IO a)) (Action a b)
+@
+  myStrategy = 'simpleLinearHeuristic' 1.1 10^5
+@
 
-experiment :: NFData a => String -> (Sensor a b) -> InputGen (IO a) -> (Action a b) -> Experiment
-experiment = Experiment
+This strategy looks at the last two points to decide which input size
+to measure next. It picks a point where it thinks the measured value
+will be 1.1 times the last measured value. It will stop if the input
+size exceeds 10^5 to prevent running out of memory.
 
-pureExperiment :: NFData a => String -> (Sensor a b) -> InputGen a -> (a -> b) -> Experiment
-pureExperiment desc sensor gen f = experiment desc sensor (return . gen) (return . f)
+Now we can finally perform the experiment:
 
--------------------------------------------------------------------------------
+@
+  stats <- 'performExperiment' myStrategy 10 15 expQSort
+@
 
-performExperiment :: Strategy MeasurementStats
-        -> Integer -- ^Number of samples per input size.
-        -> Double  -- ^Maximum measure time in seconds (wall clock time).
-        -> Experiment
-        -> IO MeasurementStats
-performExperiment (Strategy next run) numSamples maxMeasureTime (Experiment desc sensor gen action) =
-    do startTime <- getCurrentTime
+The experiment will take 10 samples per input size and it will run for
+15 seconds. The result is a bunch of 'MeasurementStats'. You can now
+print these statistics to stdout or show them in a nice graph:
 
-       let measureLoop xs = do curTime <- liftIO getCurrentTime
-                               let elapsedTime = diffUTCTime curTime startTime
-                               let remTime = maxMeasureTime - realToFrac elapsedTime
+@
+  'printStats'     [stats]
+  'showStatsChart' [stats]
+@
 
-                               n' <- next xs remTime
-                               case n' of
-                                 Just n | remTime > 0 -> liftIO (timeout (round $ remTime * 1e6) $ measureSample n)
-                                                         >>= maybe (return xs) (\x -> measureLoop (x:xs))
-                                 _ -> return xs
+Looking at the type signatures of these function you'll notice that
+they accept a list of 'MeasurementStats'. This means you can compare
+multiple experiments.
 
-       run $ liftM ((MeasurementStats desc) . (sortBy (compare `on` fst)))
-                   $ measureLoop []
-    where
-      measureSample :: InputSize -> IO Sample
-      measureSample = measureAction gen action sensor numSamples
+Let's compare 'qsort' to the build in 'Data.List.sort'. This time
+we'll use some convenient utility functions to more easily setup and
+perform an experiment.
 
--- |Measure the time needed to evaluate an action when applied to an input of
---  size 'n'.
-measureAction :: NFData a
-              => InputGen (IO a) -> Action a b -> Sensor a b -> Integer -> InputSize -> IO Sample
-measureAction gen action sensor numSamples inputSize = fmap (\ys -> (inputSize, calculateStats ys))
-                                                            measure
-    where
-      measure :: IO [Double]
-      measure = gen inputSize >>=| \x -> mapM (sensor action) $ genericReplicate numSamples x
+@
+  expSorts = [ 'pureExperiment' \"qsort\"          mySensor genIntList qsort
+             , 'pureExperiment' \"Data.List.sort\" mySensor genIntList 'sort'
+             ]
+  'simpleSmartMeasure' 1.1 10^5 10 20 expSorts
+@
 
--------------------------------------------------------------------------------
--- Measurement strategy
--------------------------------------------------------------------------------
+The utility function 'simpleSmartMeasure' uses the
+'simpleLinearHeuristic' strategy by default. The first to arguments
+are passed to the heuristic. We again choose to take 10 samples per
+input size. The total measurement time is increased to 20 seconds, but
+it is now used to measure two functions instead of one. The time is
+divided evenly and each function gets 10 seconds. The last argument is
+a list of experiments. After 20 seconds you'll get a nice graph
+comparing the complexity of the two sorting algorithms.
 
-data Strategy a = forall m. MonadIO m =>
-                  Strategy ([Sample] -> Double -> m (Maybe InputSize))
-                            (m a -> IO a)
+-}
 
+module Test.Complexity
+    ( module Test.Complexity.Base
+    , module Test.Complexity.Chart
+    , module Test.Complexity.Pretty
+    , module Test.Complexity.Utils
+    ) where
 
-simpleLinearHeuristic :: Double -> InputSize -> Strategy a
-simpleLinearHeuristic step maxSize = Strategy (\xs _ -> return $ f xs) id
-    where
-    f :: [Sample] -> Maybe InputSize
-    f xs | n < maxSize = Just n
-         | otherwise   = Nothing
-        where
-          n = simple step xs
-
-          simple _    []                                = 0
-          simple _    [_]                               = 1
-          simple step ((x2,y2):(x1,y1):_) | x3 <= x2    = x2 + dx
-                                          | x3 > 2 * x2 = 2 * x2
-                                          | otherwise   = x3
-              where
-                t2 = statsMean2 $ y2
-                t1 = statsMean2 $ y1
-                dx = x2 - x1
-                dt = t2 - t1
-                x3 = ceiling $ (fromInteger dx / dt) * (step * t2)
-
-inputSizeFromList :: [InputSize] -> Strategy a
-inputSizeFromList ns = Strategy (\_ _ -> m) (\s -> evalStateT s ns)
-    where
-      m :: StateT [InputSize] IO (Maybe InputSize)
-      m = do xs <- get
-             case xs of
-               []      -> return Nothing
-               (x:xs') -> do put xs'
-                             return $ Just x
-
--------------------------------------------------------------------------------
--- Sensors
--------------------------------------------------------------------------------
-
--- |Function that measures some aspect of the execution of an action.
-type Sensor a b = (Action a b) -> a -> IO Double
-
--- |Measure the execution time of an action.
---
---  Actions will be executed repeatedly until the cumulative time exceeds
---  minSampleTime milliseconds. The final result will be the cumulative time
---  divided by the number of iterations. In order to get sufficient precision
---  the minSampleTime should be set to at least a few times the time source's
---  precision. If you want to know only the execution time of the supplied
---  action and not the evaluation time of its input value you should ensure
---  that the input value is in head normal form.
-timeSensor :: NFData b
-           => IO t               -- ^Current time.
-           -> (t -> t -> Double) -- ^Time difference.
-           -> Double             -- ^Minimum run time (in milliseconds).
-           -> Sensor a b
-timeSensor t d minSampleTime action x = go 1 0 0
-    where
-      go n totIter totCpuT =
-          do -- Time n iterations of action applied on x.
-             curCpuT <- timeIO t d n action x
-             -- Calculate new cumulative values.
-             let totCpuT'  = totCpuT  + curCpuT
-                 totIter'  = totIter + n
-             if totCpuT' >= minSampleTime
-               then let numIter = fromIntegral totIter'
-                    in return $ totCpuT' / numIter
-               else go (2 * n) totIter' totCpuT'
-
--- |Time the evaluation of an IO action.
-timeIO :: NFData b
-      => IO t               -- ^Measure current time.
-      -> (t -> t -> Double) -- ^Difference between measured times.
-      -> Int                -- ^Number of times the action is repeated.
-      -> Sensor a b
-timeIO t d n f x = do tStart  <- t
-                      strictReplicateM_ n $ f x
-                      tEnd <- t
-                      return $ d tEnd tStart
-
-cpuTimeSensor :: NFData b => Double -> Sensor a b
-cpuTimeSensor = timeSensor getCPUTime (\x y -> picoToMilli $ x - y)
-
-wallClockTimeSensor :: NFData b => Double -> Sensor a b
-wallClockTimeSensor = timeSensor getCurrentTime (\x y -> 1000 * (realToFrac $ diffUTCTime x y))
-
--------------------------------------------------------------------------------
--- Measurement results
--------------------------------------------------------------------------------
-
--- |Statistics about a measurement performed on many inputs.
-data MeasurementStats = MeasurementStats { msDesc    :: String
-                                         , msSamples :: [Sample]
-                                         } deriving Show
-
--- |Statistics about the sampling of a single input value.
-type Sample = (InputSize, Stats)
-
-data Stats = Stats { statsMin     :: Double -- ^Minimum value.
-                   , statsMax     :: Double -- ^Maximum value.
-                   , statsStdDev  :: Double -- ^Standard deviation
-                   , statsMean    :: Double -- ^Arithmetic mean.
-                   , statsMean2   :: Double
-                   -- ^Mean of all samples that lie within one
-                   --  standard deviation from the mean.
-                   , statsSamples :: [Double] -- ^Samples from which these statistics are derived.
-                   } deriving Show
-
--------------------------------------------------------------------------------
--- Misc
--------------------------------------------------------------------------------
-
--- Precondition: not $ null xs
-calculateStats :: [Double] -> Stats
-calculateStats xs = Stats { statsMin     = minimum xs
-                          , statsMax     = maximum xs
-                          , statsStdDev  = stddev_xs
-                          , statsMean    = mean_xs
-                          , statsMean2   = mean2_xs
-                          , statsSamples = xs
-                          }
-    where stddev_xs = stddev xs
-          mean_xs   = mean xs
-          mean2_xs | null inStddev = mean_xs
-                   | otherwise     = mean inStddev
-          inStddev = filter (\x -> diff mean_xs x < stddev_xs) xs
+import Test.Complexity.Base
+import Test.Complexity.Chart
+import Test.Complexity.Pretty
+import Test.Complexity.Utils

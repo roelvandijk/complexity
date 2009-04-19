@@ -1,3 +1,5 @@
+{-# OPTIONS_HADDOCK hide #-}
+
 module Test.Complexity.Misc ( (>>=|)
                             , (>>|)
                             , strictReplicateM_

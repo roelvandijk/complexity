@@ -2,47 +2,31 @@
 
 module Main where
 
-import Data.Function (fix)
-import Data.List (sort, unfoldr)
+import Data.Function      (fix)
+import Data.List          (sort, unfoldr)
 import System.Environment (getArgs)
 import qualified Data.List   as L
 import qualified Data.Map    as M
 import qualified Data.IntMap as IM
 
-import System.Random.Mersenne
-
 import Test.Complexity
-import Test.Complexity.Pretty (printStats)
-import Test.Complexity.Chart  (showStatsChart)
 
 -------------------------------------------------------------------------------
+-- Some input generators for lists of Int
 
-quickPerformExps :: (a -> IO MeasurementStats) -> [a] -> IO ()
-quickPerformExps f xs = do stats <- mapM f xs
-                           printStats     stats
-                           showStatsChart stats
-
-simpleMeasureNs :: [InputSize] -> Integer -> Double -> [Experiment] -> IO ()
-simpleMeasureNs ns numSamples maxTime =
-    quickPerformExps (performExperiment (inputSizeFromList ns) numSamples maxTime)
-
-
-simpleSmartMeasure :: Double -> InputSize -> Integer -> Double -> [Experiment] -> IO ()
-simpleSmartMeasure step maxN numSamples maxTime xs =
-    let tMax = maxTime / (fromIntegral $ length xs)
-    in quickPerformExps (performExperiment (simpleLinearHeuristic step maxN) numSamples tMax) xs
-
--------------------------------------------------------------------------------
-
-mkIntList :: InputSize -> [Int]
-mkIntList n = let n' = fromInteger n
+genIntList :: InputGen [Int]
+genIntList n = let n' = fromInteger n
               in [n', n' - 1 .. 0]
 
-mkIntList2 :: InputSize -> [Int]
-mkIntList2 n = take (fromInteger n) $ go 0
-    where go x = x : go (1 + x `mod` 7)
+-- Very simple pseudo random number generator.
+pseudoRnd :: Int -> Int -> Int -> Int -> [Int]
+pseudoRnd p1 p2 n d = iterate (\x -> (p1 * x + p2) `mod` n) d
+
+genIntList2 :: InputGen [Int]
+genIntList2 n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ 31 - 1) 79
 
 -------------------------------------------------------------------------------
+-- Bunch of fibonacci functions
 
 fib0 :: Integer -> Integer
 fib0 0 = 0
@@ -79,16 +63,19 @@ fib6 :: Integer -> Integer
 fib6 n = fibs !! fromInteger n
     where fibs = map fst $ iterate (\(a,b) -> (b, a+b)) (0,1)
 
-benchFibs :: [Experiment]
-benchFibs = [ pureExperiment "fib1" (cpuTimeSensor 10) id fib1
-            , pureExperiment "fib2" (cpuTimeSensor 10) id fib2
-            , pureExperiment "fib3" (cpuTimeSensor 10) id fib3
-            , pureExperiment "fib4" (cpuTimeSensor 10) id fib4
-            , pureExperiment "fib5" (cpuTimeSensor 10) id fib5
-            , pureExperiment "fib6" (cpuTimeSensor 10) id fib6
-            ]
+expFibs :: [Experiment]
+expFibs = --[ pureExperiment "fib0" (cpuTimeSensor 10) id fib0
+          --, pureExperiment "fib1" (cpuTimeSensor 10) id fib1
+          --] ++
+          [ pureExperiment "fib2" (cpuTimeSensor 10) id fib2
+          , pureExperiment "fib3" (cpuTimeSensor 10) id fib3
+          , pureExperiment "fib4" (cpuTimeSensor 10) id fib4
+          , pureExperiment "fib5" (cpuTimeSensor 10) id fib5
+          , pureExperiment "fib6" (cpuTimeSensor 10) id fib6
+          ]
 
 -------------------------------------------------------------------------------
+-- Sorting algorithms
 
 bsort :: Ord a => [a] -> [a]
 bsort [] = []
@@ -101,37 +88,27 @@ qsort :: Ord a => [a] -> [a]
 qsort []     = []
 qsort (x:xs) = qsort (filter (< x) xs) ++ [x] ++ qsort (filter (>= x) xs)
 
-benchBSort, benchQSort, benchSort, benchSorts :: [Experiment]
-benchBSort  = [pureExperiment "bubble sort"    (cpuTimeSensor 10) mkIntList2 bsort]
-benchQSort  = [pureExperiment "quick sort"     (cpuTimeSensor 10) mkIntList2 qsort]
-benchSort   = [pureExperiment "Data.List.sort" (cpuTimeSensor 10) mkIntList2 sort]
-benchSorts  = benchBSort ++ benchQSort ++ benchSort
-
-zoei :: [Experiment]
-zoei = [ pureExperiment "quick sort (CPU)"  (cpuTimeSensor       10) mkIntList2 qsort
-       , pureExperiment "quick sort (Wall)" (wallClockTimeSensor 10) mkIntList2 qsort
-       ]
+expBSort, expQSort, expSort, expSorts :: [Experiment]
+expBSort  = [pureExperiment "bubble sort"    (cpuTimeSensor 10) genIntList2 bsort]
+expQSort  = [pureExperiment "quick sort"     (cpuTimeSensor 10) genIntList2 qsort]
+expSort   = [pureExperiment "Data.List.sort" (cpuTimeSensor 10) genIntList2 sort]
+expSorts  = expBSort ++ expQSort ++ expSort
 
 -------------------------------------------------------------------------------
+-- Map lookups
 
 mkMap :: InputSize -> (Int, M.Map Int Int)
 mkMap n = let n' = fromInteger n
           in (n' `div` 2, M.fromList [(k, k) | k <- [0 .. n']])
 
-mkMap2 :: InputSize -> IO (Int, M.Map Int Int)
-mkMap2 n = let n' = fromInteger n
-           in do f <- random =<< getStdGen :: IO Double
-                 let x = floor $ f * (fromIntegral n)
-                 return (x, M.fromList [(k, k) | k <- [0 .. n']])
-
 mkIntMap :: InputSize -> (Int, IM.IntMap Int)
 mkIntMap n = let n' = fromInteger n
              in (n' `div` 2, IM.fromList [(k, k) | k <- [0 .. n']])
 
-benchMaps :: [Experiment]
-benchMaps = [ pureExperiment "Data.Map pure" (cpuTimeSensor 10) mkMap    (uncurry M.lookup)
-            , pureExperiment "Data.IntMap"   (cpuTimeSensor 10) mkIntMap (uncurry IM.lookup)
-            ]
+expMaps :: [Experiment]
+expMaps = [ pureExperiment "Data.Map pure" (cpuTimeSensor 10) mkMap    (uncurry M.lookup)
+          , pureExperiment "Data.IntMap"   (cpuTimeSensor 10) mkIntMap (uncurry IM.lookup)
+          ]
 
 -------------------------------------------------------------------------------
 
@@ -146,4 +123,4 @@ cmdLine xs = do args <- getArgs
                   else putStrLn "Error: I need 2 arguments (max time and max input size)"
 
 main :: IO ()
-main = cmdLine zoei
+main = cmdLine expSorts
