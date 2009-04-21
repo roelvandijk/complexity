@@ -1,5 +1,5 @@
 name:          complexity
-version:       0.1
+version:       0.1.2
 cabal-version: >= 1.6
 build-type:    Simple
 stability:     experimental
@@ -31,8 +31,9 @@ library
                    , Test.Complexity.Chart
                    , Test.Complexity.Pretty
                    , Test.Complexity.Utils
+  other-modules: Test.Complexity.Misc
 
 -- executable example
 --   GHC-Options: -O2 -Wall -fno-warn-name-shadowing
---   build-depends: mersenne-random, containers
+--   build-depends: containers
 --   main-is: example.hs
