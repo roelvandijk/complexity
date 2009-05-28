@@ -1,5 +1,5 @@
 name:          complexity
-version:       0.1.2
+version:       0.1.3
 cabal-version: >= 1.6
 build-type:    Simple
 stability:     experimental
@@ -24,7 +24,7 @@ library
                , data-accessor >= 0.2
                , pretty >= 1
                , colour >= 2
-               , Chart >= 0.1 && <= 10.0.3
+               , Chart >= 0.11 && < 0.12
                , hstats >= 0.1 && <= 0.3
   exposed-modules: Test.Complexity
                    , Test.Complexity.Base

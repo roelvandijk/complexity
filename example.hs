@@ -23,7 +23,7 @@ pseudoRnd :: Int -> Int -> Int -> Int -> [Int]
 pseudoRnd p1 p2 n d = iterate (\x -> (p1 * x + p2) `mod` n) d
 
 genIntList2 :: InputGen [Int]
-genIntList2 n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ 31 - 1) 79
+genIntList2 n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ (31 :: Int) - 1) 79
 
 -------------------------------------------------------------------------------
 -- Bunch of fibonacci functions
