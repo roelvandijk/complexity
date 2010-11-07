@@ -108,12 +108,10 @@ comparing the complexity of the two sorting algorithms.
 
 module Test.Complexity
     ( module Test.Complexity.Base
-    , module Test.Complexity.Chart
     , module Test.Complexity.Pretty
     , module Test.Complexity.Utils
     ) where
 
 import Test.Complexity.Base
-import Test.Complexity.Chart
 import Test.Complexity.Pretty
 import Test.Complexity.Utils

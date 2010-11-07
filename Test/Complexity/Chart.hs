@@ -6,17 +6,33 @@ module Test.Complexity.Chart ( statsToChart
                              , showStatsChart
                              ) where
 
+--------------------------------------------------------------------------------
+-- Imports
+--------------------------------------------------------------------------------
+
+-- from base:
+import Data.List ( intercalate )
+
+-- from Chart:
 import Graphics.Rendering.Chart
 import Graphics.Rendering.Chart.Gtk
-import Data.Accessor
-import Data.List (intercalate)
 
+-- from colour:
 import Data.Colour
 import Data.Colour.Names
 
+-- from complexity:
 import Test.Complexity.Base ( MeasurementStats(..)
                             , Stats(..)
                             )
+
+
+-- from data-accessor:
+import Data.Accessor
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
 
 statsToChart :: [(MeasurementStats, Colour Double)] -> Layout1 Double Double
 statsToChart [] = defaultLayout1
