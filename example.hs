@@ -111,7 +111,7 @@ bsort [] = []
 bsort xs = iterate swapPass xs !! (length xs - 1)
    where swapPass (x:y:zs) | x > y     = y : swapPass (x:zs)
                            | otherwise = x : swapPass (y:zs)
-         swapPass xs = xs
+         swapPass zs = zs
 
 qsort ∷ Ord a ⇒ [a] → [a]
 qsort []     = []
@@ -184,14 +184,14 @@ toPolynomial b n | n ≡ 0    = [0]
                  | b ≡ 1    = genericReplicate (abs n) (signum n)
                  | otherwise = toPolynomial_b $ n
       where toPolynomial_b 0 = []
-            toPolynomial_b n = let (q, r) = n `qr` b
-                         in r : toPolynomial_b q
+            toPolynomial_b i = let (q, r) = i `qrf` b
+                               in r : toPolynomial_b q
 
-            qr | b > 0     = quotRem
-               | otherwise = quotRem'
+            qrf | b > 0     = quotRem
+                | otherwise = quotRem'
 
             quotRem' ∷ Integral a ⇒ a → a → (a, a)
-            quotRem' n d = let qr@(q, r) = n `quotRem` d
+            quotRem' i d = let qr@(q, r) = i `quotRem` d
                            in if r < 0
                               then (q + 1, r - d)
                               else qr
@@ -214,7 +214,7 @@ mkCountBits_array b =  let r = 2 ^ b
                        in toInteger ∘ sum ∘ map ((bitArr IA.!) ∘ fromInteger) ∘ toPolynomial r
 
 countBits1 ∷ Integer → Integer
-countBits1 n = go n
+countBits1 x = go x
     where go 0 = 0
           go n = (if odd n then 1 else 0) + go (B.shiftR n 1)
 
@@ -250,5 +250,5 @@ cmdLine xs = do args ← getArgs
 
 
 main ∷ IO ()
--- main = defaultMain expSorts
-main = cmdLine expSorts
+main = defaultMain expSorts
+-- main = cmdLine expSorts

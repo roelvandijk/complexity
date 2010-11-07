@@ -10,15 +10,12 @@ module Test.Complexity.Utils
     , smartMeasure
     ) where
 
-import Test.Complexity.Base   ( MeasurementStats
-                              , Experiment
-                              , InputSize
-                              , performExperiment
-                              , inputSizeFromList
-                              , linearHeuristic
-                              )
--- import Test.Complexity.Chart  ( showStatsChart )
-import Test.Complexity.Pretty ( printStats )
+-- import Test.Complexity.Chart     ( showStatsChart )
+import Test.Complexity.Experiment ( Experiment, performExperiment )
+import Test.Complexity.Pretty     ( printStats )
+import Test.Complexity.Results    ( MeasurementStats )
+import Test.Complexity.Strategy   ( inputSizeFromList, linearHeuristic )
+import Test.Complexity.Types      ( InputSize )
 
 
 quickPerformExps ∷ (α → IO MeasurementStats) → [α] → IO ()

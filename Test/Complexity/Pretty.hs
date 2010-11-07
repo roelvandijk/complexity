@@ -11,10 +11,8 @@ import Data.Function.Unicode ( (∘) )
 import Text.PrettyPrint
 import Text.Printf ( printf )
 
-import Test.Complexity.Base ( MeasurementStats(..)
-                            , Sample
-                            , Stats(..)
-                            )
+import Test.Complexity.Results ( MeasurementStats(..), Stats(..), Sample )
+
 
 prettyStats ∷ MeasurementStats → Doc
 prettyStats (MeasurementStats {..}) =   text "desc:" <+> text msDesc

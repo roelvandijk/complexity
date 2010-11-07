@@ -9,9 +9,6 @@ Lot's of code in this module was 'borrowed' from criterion.
 
 module Test.Complexity.Main where
 
-import Test.Complexity
-
-
 --------------------------------------------------------------------------------
 -- Imports
 --------------------------------------------------------------------------------
@@ -44,8 +41,15 @@ import Data.Function.Unicode ( (∘) )
 import Data.Monoid.Unicode   ( (⊕) )
 
 -- from complexity:
-import Test.Complexity.Config
+import Test.Complexity.Config     ( Config(..), Exit(..), Verbosity(..)
+                                  , defaultConfig, ljust 
+                                  )
+import Test.Complexity.Experiment ( Experiment )
+import Test.Complexity.Monad      ( runConfigT )
 
+
+-- from transformers:
+import Control.Monad.IO.Class ( liftIO )
 
 --------------------------------------------------------------------------------
 -- Option parsing
@@ -72,7 +76,7 @@ defaultOptions =
   , Option ['f']
            ["file"]
            (ReqArg (\s → return $ mempty { cfgDataFile = ljust s }) "FILENAME")
-           "file to store measurement results; if this option is not specified if"
+           "file to store measurement results"
   , Option ['t']
            ["timeout"]
            (ReqArg (\s → parsePos "timeout" s >>= \t → return $ mempty { cfgTimeout = ljust t }) "TIMEOUT")
@@ -116,7 +120,9 @@ defaultMain ∷ [Experiment] → IO ()
 defaultMain = defaultMainWith defaultConfig
 
 defaultMainWith ∷ Config → [Experiment] → IO ()
-defaultMainWith defCfg xs = do (cfg, _) ← parseArgs defCfg defaultOptions =<< getArgs
-                               putStrLn "Arguments parsed:"
-                               putStrLn $ show cfg
+defaultMainWith defCfg experiments = do 
+  (cfg, _) ← parseArgs defCfg defaultOptions =<< getArgs
+  runConfigT cfg $ do
+    liftIO $ putStrLn "Arguments parsed:"
+    liftIO $ putStrLn $ show cfg
                                

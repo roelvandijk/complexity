@@ -29,8 +29,15 @@ library
                , time                 >= 1.1.2.3 && < 1.3
                , transformers         >= 0.1.4   && < 0.3
   exposed-modules: Test.Complexity
-                   , Test.Complexity.Base
+                   , Test.Complexity.Config
+                   , Test.Complexity.Experiment
+                   , Test.Complexity.Main
+                   , Test.Complexity.Monad
                    , Test.Complexity.Pretty
+                   , Test.Complexity.Results
+                   , Test.Complexity.Sensors
+                   , Test.Complexity.Strategy
+                   , Test.Complexity.Types
                    , Test.Complexity.Utils
   other-modules: Test.Complexity.Fit
                , Test.Complexity.Misc
