@@ -16,7 +16,7 @@ description:
 Extra-Source-Files: example.hs
 
 library
-  GHC-Options: -O2 -Wall
+  GHC-Options: -Wall
   build-depends: base                 >= 3.0.3.1 && < 4.4
                , base-unicode-symbols >= 0.2.1   && < 0.3
                , colour               >= 2.2.1   && < 2.4
@@ -36,6 +36,6 @@ library
                , Test.Complexity.Misc
 
 executable example
-  GHC-Options: -O2 -Wall
+  GHC-Options: -Wall
   build-depends: containers, array
   main-is: example.hs
