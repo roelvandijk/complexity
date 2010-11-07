@@ -16,7 +16,7 @@ module Test.Complexity.Misc ( (>>=|)
 
 
 -- from base:
-import Control.Monad               ( Functor, MonadPlus, mzero )
+import Control.Monad               ( MonadPlus, mzero )
 
 -- from deepseq:
 import Control.DeepSeq             ( NFData )
@@ -37,7 +37,7 @@ m >>=| f = m >>= f $| rdeepseq
 m1 >>| m2 = m1 >>=| const m2
 
 strictReplicateM_ ∷ NFData α ⇒ Int → IO α → IO ()
-strictReplicateM_ n a = go n
+strictReplicateM_ x a = go x
     where go 0 = return ()
           go n = a >>| go (n - 1)
 

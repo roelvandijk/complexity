@@ -14,8 +14,7 @@ import Prelude hiding ( replicate )
 -- from base:
 import Control.Monad         ( MonadPlus, mzero, guard )
 import Data.Function         ( on )
-import Data.List             ( minimumBy, sortBy )
-import Data.Maybe            ( catMaybes )
+import Data.List             ( sortBy )
 
 -- from base-unicode-symbols:
 import Data.Eq.Unicode       ( (≡) )
@@ -37,9 +36,6 @@ import SizedList             ( replicate )
 
 -- from hstats:
 import Math.Statistics       ( mean )
-
--- from complexity:
-import Test.Complexity.Misc  ( applyMany )
 
 
 --------------------------------------------------------------------------------
@@ -102,6 +98,7 @@ commonFits = [ ( "constant"
                )
              ]
 
+commonFitNames ∷ [String]
 commonFitNames = [ "constant"
                  , "logarithmic"
                  , "linear"
@@ -118,7 +115,7 @@ mkLevMarFit ∷ (Nat n, Fractional r, LevMarable r)
             → [(a, r)]
             → Maybe (a → r)
 mkLevMarFit m j e samples = either (const Nothing)
-                                   (\(ps, info, _) → Just $ m $* ps)
+                                   (\(ps, _, _) → Just $ m $* ps)
                                    $ levmar m
                                             j
                                             (e samples)
@@ -136,7 +133,7 @@ fitAll xs samples = let ys = do (n, f, w) ← xs
                                     e = w ⋅ calcError f' samples
                                 guard (e ≡ e)
                                 return (n, f', e)
-                    in sortBy (compare `on` (\(f, b, e) → e)) ys
+                    in sortBy (compare `on` (\(_, _, e) → e)) ys
 
 -------------------------------------------------------------------------------
 -- Formula's

@@ -20,72 +20,31 @@ import Test.Complexity
 import Control.Monad         ( (>>=), (=<<), (>>), return, fail, sequence )
 import Data.Bool             ( otherwise )
 import Data.Char             ( String )
-import Data.Eq               ( Eq )
-import Data.Function         ( ($), on )
+import Data.Function         ( ($) )
 import Data.Functor          ( fmap )
 import Data.List             ( (++) )
 import Data.Maybe            ( Maybe(Nothing, Just) )
 import Data.Monoid           ( Monoid(..), Last(..) )
 import Data.Ord              ( Ord, (>) )
-import Data.Typeable         ( Typeable )
-import Prelude               ( Bounded, Enum, Integer, fromInteger )
+import Prelude               ( Integer, fromInteger )
 import System.Environment    ( getArgs, getProgName )
 import System.Exit           ( ExitCode(ExitSuccess, ExitFailure), exitWith )
 import System.Console.GetOpt ( ArgOrder(Permute)
                              , ArgDescr(NoArg, ReqArg)
                              , OptDescr(Option)
-                             , getOpt 
+                             , getOpt, usageInfo
                              )
-import System.IO             ( IO, putStrLn )
+import System.IO             ( IO, putStr, putStrLn )
 import Text.Printf           ( printf )
-import Text.Read             ( Read, reads )
-import Text.Show             ( Show )
+import Text.Read             ( reads )
+import Text.Show             ( Show, show )
 
 -- from base-unicode-symbols:
 import Data.Function.Unicode ( (∘) ) 
-import Data.Monoid.Unicode   ( (∅), (⊕) )
+import Data.Monoid.Unicode   ( (⊕) )
 
-
---------------------------------------------------------------------------------
--- Configurations
---------------------------------------------------------------------------------
-
-
-data Verbosity = Quiet
-               | Normal
-               | Verbose
-                 deriving (Eq, Ord, Bounded, Enum, Read, Show, Typeable)
-
-data Config = Config { cfgVerbosity ∷ Last Verbosity
-                     , cfgDataFile  ∷ Last String
-                     , cfgTimeout   ∷ Last Integer
-                     } deriving (Eq, Read, Show, Typeable)
-
-instance Monoid Config where
-    mempty  = emptyConfig
-    mappend = appendConfig
-
-ljust ∷ α → Last α
-ljust = Last ∘ Just
-
-emptyConfig ∷ Config
-emptyConfig = Config { cfgVerbosity = (∅)
-                     , cfgDataFile  = (∅)
-                     , cfgTimeout   = (∅)
-                     }
-
-defaultConfig ∷ Config
-defaultConfig = Config { cfgVerbosity = ljust Normal
-                       , cfgDataFile  = (∅)
-                       , cfgTimeout   = ljust 10
-                       }
-
-appendConfig ∷ Config → Config → Config
-appendConfig x y = Config { cfgVerbosity = app cfgVerbosity x y
-                          , cfgDataFile  = app cfgDataFile  x y
-                          , cfgTimeout   = app cfgTimeout   x y
-                          }
-    where app f = (⊕) `on` f
+-- from complexity:
+import Test.Complexity.Config
 
 
 --------------------------------------------------------------------------------
@@ -113,19 +72,38 @@ defaultOptions =
   , Option ['f']
            ["file"]
            (ReqArg (\s → return $ mempty { cfgDataFile = ljust s }) "FILENAME")
-           "file to store measurement results"
+           "file to store measurement results; if this option is not specified if"
   , Option ['t']
            ["timeout"]
            (ReqArg (\s → parsePos "timeout" s >>= \t → return $ mempty { cfgTimeout = ljust t }) "TIMEOUT")
            ""
+  , Option ['h']
+           ["help"]
+           (NoArg $ return $ mempty { cfgExit = ljust ExitWithHelp })
+           "shows command line usage information"
+  , Option ['V']
+           ["version"]
+           (NoArg $ return $ mempty { cfgExit = ljust ExitWithVersion })
+           ""
   ]
+
+progUsageInfo ∷ [OptDescr (IO Config)] → IO String
+progUsageInfo options = do
+  p ← getProgName
+  return $ usageInfo ("Usage: " ⊕ p ⊕ " [OPTIONS]") options
 
 parseArgs ∷ Config → [OptDescr (IO Config)] → [String] → IO (Config, [String])
 parseArgs defCfg options args = 
     case getOpt Permute options args of
-      (_, _, err:_)    → putStrLn "Er ging iets fout" >> exitWith (ExitFailure 1)
+      (_, _, _:_)      → putStrLn "TODO: better error report" >> exitWith (ExitFailure 1)
       (opts, rest, []) → do
         cfg ← ((defCfg ⊕) ∘ mconcat) `fmap` sequence opts
+        case getLast $ cfgExit cfg of
+             Just ExitWithHelp    → do putStr =<< progUsageInfo defaultOptions
+                                       exitWith ExitSuccess
+             Just ExitWithVersion → do putStrLn "TODO: report version"
+                                       exitWith ExitSuccess
+             Nothing              → return ()
         return (cfg, rest)
 
 
@@ -138,7 +116,7 @@ defaultMain ∷ [Experiment] → IO ()
 defaultMain = defaultMainWith defaultConfig
 
 defaultMainWith ∷ Config → [Experiment] → IO ()
-defaultMainWith defCfg xs = do (cfg, args) ← parseArgs defCfg defaultOptions =<< getArgs
-                               putStrLn "Now I should probably do something..."
-                               putStrLn "But I won't."
+defaultMainWith defCfg xs = do (cfg, _) ← parseArgs defCfg defaultOptions =<< getArgs
+                               putStrLn "Arguments parsed:"
+                               putStrLn $ show cfg
                                
