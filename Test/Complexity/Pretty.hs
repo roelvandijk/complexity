@@ -1,17 +1,14 @@
-{-# LANGUAGE RecordWildCards 
-           , UnicodeSyntax
-  #-}
+{-# LANGUAGE PackageImports  #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE UnicodeSyntax   #-}
 
-module Test.Complexity.Pretty ( prettyStats
-                              , printStats
-                              ) where
+module Test.Complexity.Pretty (prettyStats, printStats) where
 
-import Data.Function.Unicode ( (∘) )
-
-import Text.PrettyPrint
-import Text.Printf ( printf )
-
-import Test.Complexity.Results ( MeasurementStats(..), Stats(..), Sample )
+import "base-unicode-symbols" Data.Function.Unicode ( (∘) )
+import qualified "vector" Data.Vector as V
+import "this" Test.Complexity.Types ( MeasurementStats(..), Sample )
+import "pretty" Text.PrettyPrint
+import "base" Text.Printf ( printf )
 
 
 prettyStats ∷ MeasurementStats → Doc
@@ -20,8 +17,8 @@ prettyStats (MeasurementStats {..}) =   text "desc:" <+> text msDesc
                                     $+$ vcat (map ppSample msSamples)
     where ppSample ∷ Sample → Doc
           ppSample (x, y) = (text ∘ printf "%3i") x <+> char '|' <+> ppStats y
-          ppStats (Stats {..}) = int (length statsSamples)
-                                 <+> hsep (map (text ∘ printf "%7.3f")
+          ppStats (Stats {..}) = int (V.length statsSamples)
+                                 <+> hsep (map (text ∘ printf "%13.9f")
                                                [statsMin, statsMean2, statsMax, statsStdDev]
                                           )
 

@@ -1,7 +1,7 @@
 
 {-# LANGUAGE DeriveDataTypeable
            , NoImplicitPrelude
-           , UnicodeSyntax 
+           , UnicodeSyntax
   #-}
 
 {-
@@ -17,7 +17,7 @@ module Test.Complexity.Config where
 
 -- from base:
 import Control.Monad         ( (>>=), fail )
-import Data.Char             ( String )
+import Data.String             ( String )
 import Data.Eq               ( Eq )
 import Data.Function         ( on )
 import Data.Maybe            ( Maybe(Just) )
@@ -29,7 +29,7 @@ import Text.Read             ( Read )
 import Text.Show             ( Show )
 
 -- from base-unicode-symbols:
-import Data.Function.Unicode ( (∘) ) 
+import Data.Function.Unicode ( (∘) )
 
 --------------------------------------------------------------------------------
 -- Configurations

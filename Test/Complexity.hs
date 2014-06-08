@@ -107,25 +107,15 @@ comparing the complexity of the two sorting algorithms.
 -}
 
 module Test.Complexity
-    ( module Test.Complexity.Config
-    , module Test.Complexity.Experiment
+    ( module Test.Complexity.Experiment
     , module Test.Complexity.Main
-    , module Test.Complexity.Monad
-    , module Test.Complexity.Pretty
-    , module Test.Complexity.Results
     , module Test.Complexity.Sensors
     , module Test.Complexity.Strategy
     , module Test.Complexity.Types
-    , module Test.Complexity.Utils
     ) where
 
-import Test.Complexity.Config
 import Test.Complexity.Experiment
 import Test.Complexity.Main
-import Test.Complexity.Monad
-import Test.Complexity.Pretty
-import Test.Complexity.Results
 import Test.Complexity.Sensors
 import Test.Complexity.Strategy
 import Test.Complexity.Types
-import Test.Complexity.Utils

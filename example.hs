@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleInstances 
-           , RankNTypes
-           , UnicodeSyntax
-  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE PackageImports    #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 
 module Main where
 
@@ -9,43 +9,35 @@ module Main where
 -- Imports
 --------------------------------------------------------------------------------
 
--- from base:
-import Control.Monad         ( forM_ )
-import Data.Array.IArray     ( assocs )
-import Data.Array.MArray     ( newArray, readArray, writeArray )
-import Data.Array.ST         ( runSTUArray )
-import Data.Array.Unboxed    ( UArray, accumArray, listArray )
-import Data.Function         ( fix )
-import Data.List             ( sort, unfoldr, genericReplicate )
-import Data.Word             ( Word8 )
-import System.Environment    ( getArgs )
-
-import qualified Data.Array.IArray as IA
-import qualified Data.Bits   as B
-
--- from base-unicode-symbols:
-import Data.Eq.Unicode       ( (≡) )
-import Data.Function.Unicode ( (∘) ) 
-import Prelude.Unicode       ( (⋅) )
-
--- from deepseq:
-import Control.DeepSeq       ( NFData(..) )
-
--- from containers:
-import qualified Data.Map    as M
-import qualified Data.IntMap as IM
-
--- from complexity:
-import Test.Complexity
-import Test.Complexity.Main
-
+import "array" Data.Array.IArray  ( assocs )
+import "array" Data.Array.MArray  ( newArray, readArray, writeArray )
+import "array" Data.Array.ST      ( runSTUArray )
+import "array" Data.Array.Unboxed ( UArray, accumArray, listArray )
+import qualified "array" Data.Array.IArray as IA
+import "base" Control.Monad      ( forM_ )
+import "base" Data.Function      ( fix )
+import "base" Data.List          ( sort, unfoldr, genericReplicate )
+import "base" Data.Word          ( Word8 )
+import qualified "base" Data.Bits as B
+import "base-unicode-symbols" Data.Eq.Unicode       ( (≡) )
+import "base-unicode-symbols" Data.Function.Unicode ( (∘) )
+import "base-unicode-symbols" Prelude.Unicode       ( (⋅) )
+import "deepseq" Control.DeepSeq ( NFData(..) )
+import qualified "containers" Data.Map    as M
+import qualified "containers" Data.IntMap as IM
+import "this" Test.Complexity
+import "transformers" Control.Monad.IO.Class ( liftIO )
+import "criterion" Criterion ( nf )
+import "criterion" Criterion.Config ( Config, defaultConfig, cfgSamples, ljust )
+import "criterion" Criterion.Environment ( Environment, measureEnvironment )
+import "criterion" Criterion.Monad ( withConfig, getConfig )
 
 -------------------------------------------------------------------------------
 -- Some input generators for lists of Int
 
 genIntList ∷ InputGen [Int]
 genIntList n = let n' = fromInteger n
-              in [n', n' - 1 .. 0]
+               in [n', n' - 1 .. 0]
 
 -- Very simple pseudo random number generator.
 pseudoRnd ∷ Integral n ⇒ n → n → n → n → [n]
@@ -53,6 +45,7 @@ pseudoRnd p1 p2 n d = iterate (\x → (p1 ⋅ x + p2) `mod` n) d
 
 genIntList2 ∷ InputGen [Int]
 genIntList2 n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ (31 ∷ Int) - 1) 79
+
 
 -------------------------------------------------------------------------------
 -- Bunch of fibonacci functions
@@ -92,16 +85,18 @@ fib6 ∷ Integer → Integer
 fib6 n = fibs !! fromInteger n
     where fibs = map fst $ iterate (\(a, b) → (b, a + b)) (0,1)
 
+{-
 expFibs ∷ [Experiment]
-expFibs = --[ pureExperiment "fib0" (cpuTimeSensor 10) id fib0
-          --, pureExperiment "fib1" (cpuTimeSensor 10) id fib1
+expFibs = --[ experiment "fib0" (cpuTimeSensor 10) id fib0
+          --, experiment "fib1" (cpuTimeSensor 10) id fib1
           --] ++
-          [ pureExperiment "fib2" (cpuTimeSensor 10) id fib2
-          , pureExperiment "fib3" (cpuTimeSensor 10) id fib3
-          , pureExperiment "fib4" (cpuTimeSensor 10) id fib4
-          , pureExperiment "fib5" (cpuTimeSensor 10) id fib5
-          , pureExperiment "fib6" (cpuTimeSensor 10) id fib6
+          [ experiment "fib2" (cpuTimeSensor 10) id fib2
+          , experiment "fib3" (cpuTimeSensor 10) id fib3
+          , experiment "fib4" (cpuTimeSensor 10) id fib4
+          , experiment "fib5" (cpuTimeSensor 10) id fib5
+          , experiment "fib6" (cpuTimeSensor 10) id fib6
           ]
+-}
 
 -------------------------------------------------------------------------------
 -- Sorting algorithms
@@ -113,15 +108,18 @@ bsort xs = iterate swapPass xs !! (length xs - 1)
                            | otherwise = x : swapPass (y:zs)
          swapPass zs = zs
 
+
 qsort ∷ Ord a ⇒ [a] → [a]
 qsort []     = []
 qsort (x:xs) = qsort (filter (< x) xs) ++ [x] ++ qsort (filter (>= x) xs)
 
+{-
 expBSort, expQSort, expSort, expSorts ∷ [Experiment]
-expBSort  = [pureExperiment "bubble sort"    (cpuTimeSensor 10) genIntList2 bsort]
-expQSort  = [pureExperiment "quick sort"     (cpuTimeSensor 10) genIntList2 qsort]
-expSort   = [pureExperiment "Data.List.sort" (cpuTimeSensor 10) genIntList2 sort]
+expBSort  = [experiment "bubble sort"    (cpuTimeSensor 10) genIntList2 bsort]
+expQSort  = [experiment "quick sort"     (cpuTimeSensor 10) genIntList2 qsort]
+expSort   = [experiment "Data.List.sort" (cpuTimeSensor 10) genIntList2 sort]
 expSorts  = expBSort ++ expQSort ++ expSort
+-}
 
 -------------------------------------------------------------------------------
 -- Map lookups
@@ -134,10 +132,12 @@ mkIntMap ∷ InputSize → (Int, IM.IntMap Int)
 mkIntMap n = let n' = fromInteger n
              in (n' `div` 2, IM.fromList [(k, k) | k ← [0 .. n']])
 
+{-
 expMaps ∷ [Experiment]
-expMaps = [ pureExperiment "Data.Map pure" (cpuTimeSensor 10) mkMap    (uncurry M.lookup)
-          , pureExperiment "Data.IntMap"   (cpuTimeSensor 10) mkIntMap (uncurry IM.lookup)
+expMaps = [ experiment "Data.Map pure" (cpuTimeSensor 10) mkMap    (uncurry M.lookup)
+          , experiment "Data.IntMap"   (cpuTimeSensor 10) mkIntMap (uncurry IM.lookup)
           ]
+-}
 
 -------------------------------------------------------------------------------
 -- Histogram
@@ -165,11 +165,13 @@ histogram2 input = runSTUArray $ do
 histogram3 ∷ [Word8] → UArray Word8 Int
 histogram3 = accumArray (+) 0 (0, 255) ∘ map (\k → (k, 1))
 
+{-
 expHistogram ∷ [Experiment]
-expHistogram = [ pureExperiment "M.fromListWith" (cpuTimeSensor 10) mkByteList histogram1
-               , pureExperiment "runSTUArray"    (cpuTimeSensor 10) mkByteList histogram2
-               , pureExperiment "accumArray"     (cpuTimeSensor 10) mkByteList histogram3
+expHistogram = [ experiment "M.fromListWith" (cpuTimeSensor 10) mkByteList histogram1
+               , experiment "runSTUArray"    (cpuTimeSensor 10) mkByteList histogram2
+               , experiment "accumArray"     (cpuTimeSensor 10) mkByteList histogram3
                ]
+-}
 
 -------------------------------------------------------------------------------
 -- Bit counting
@@ -223,32 +225,40 @@ countBits2 0 = 0
 countBits2 x = let foo = (logBase 2 $ fromIntegral x) ∷ Double
                in 1 + (countBits2 $ x - (2 ^ (floor foo ∷ Int)))
 
+{-
 expBits ∷ [Experiment]
-expBits = [ pureExperiment "count bits map 4"    (cpuTimeSensor 10) id (mkCountBits_map   4)
-          , pureExperiment "count bits map 8"    (cpuTimeSensor 10) id (mkCountBits_map   8)
-          , pureExperiment "count bits array 4"  (cpuTimeSensor 10) id (mkCountBits_array 4)
-          , pureExperiment "count bits array 8"  (cpuTimeSensor 10) id (mkCountBits_array 8)
+expBits = [ experiment "count bits map 4"    (cpuTimeSensor 10) id (mkCountBits_map   4)
+          , experiment "count bits map 8"    (cpuTimeSensor 10) id (mkCountBits_map   8)
+          , experiment "count bits array 4"  (cpuTimeSensor 10) id (mkCountBits_array 4)
+          , experiment "count bits array 8"  (cpuTimeSensor 10) id (mkCountBits_array 8)
           ]
+-}
 
 -------------------------------------------------------------------------------
 
 
-measure ∷ Double → InputSize → Integer → Double → [Experiment] → IO ()
-measure step maxN numSamples maxTime xs =
-    let tMax = maxTime / (fromIntegral $ length xs)
-    in quickPerformExps (performExperiment (linearHeuristic step maxN) numSamples tMax) xs
 
-cmdLine ∷ [Experiment] → IO ()
-cmdLine xs = do args ← getArgs
-                if length args ≡ 3
-                  then let (a1:a2:a3:_) = take 3 args
-                           step      = (read a1) ∷ Double
-                           maxTime   = (read a2) ∷ Double
-                           maxN      = (read a3) ∷ InputSize
-                       in measure step maxN 10 maxTime xs
-                  else putStrLn "Usage: <step> <maxTime> <maxN>"
+expBSort ∷ Environment → Config → Experiment
+expBSort env conf = experiment "bubble sort"
+                               (criterionSensor env conf)
+                               genIntList2
+                               (nf bsort)
 
+expQSort ∷ Environment → Config → Experiment
+expQSort env conf = experiment "quick sort"
+                               (criterionSensor env conf)
+                               genIntList2
+                               (nf qsort)
+
+expSort ∷ Environment → Config → Experiment
+expSort env conf = experiment "Data.List.sort"
+                              (criterionSensor env conf)
+                              genIntList2
+                              (nf sort)
 
 main ∷ IO ()
-main = defaultMain expSorts
--- main = cmdLine expSorts
+main = withConfig (defaultConfig {cfgSamples = ljust 20}) $ do
+         env ← measureEnvironment
+         conf ← getConfig
+         liftIO $ defaultMain $ map (\e → e env conf) [expQSort, expBSort, expSort]
+

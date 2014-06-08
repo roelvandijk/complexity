@@ -1,9 +1,9 @@
-{-# LANGUAGE ExistentialQuantification    
-           , ScopedTypeVariables         
-           , UnicodeSyntax 
-  #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE PackageImports            #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE UnicodeSyntax             #-}
 
-module Test.Complexity.Strategy 
+module Test.Complexity.Strategy
     (
     -- *Measurement strategy
       Strategy(..)
@@ -16,25 +16,18 @@ module Test.Complexity.Strategy
 -- Imports
 -------------------------------------------------------------------------------
 
--- from base:
-import Control.Arrow                  ( (***) )
-
--- from base-unicode-symbols:
-import Data.Ord.Unicode               ( (≤) )
-import Prelude.Unicode                ( (⋅) )
-
--- from complexity:
-import Test.Complexity.Fit            ( fitLinear, linearInv )
-import Test.Complexity.Misc           ( check )
-import Test.Complexity.Results        ( Sample
-                                      , Stats(..)
-                                      )
-import Test.Complexity.Types          ( InputSize )
-
--- from transformers:
-import Control.Monad.IO.Class         ( MonadIO )
-import Control.Monad.Trans.State.Lazy ( StateT, evalStateT, get, put )
-
+import "base" Control.Monad ( guard )
+import "base" Control.Applicative ( (<|>) )
+import "base" Control.Arrow                  ( (***) )
+import "base" Data.Functor ( (<$>) )
+import "base-unicode-symbols" Data.Function.Unicode ( (∘) )
+import "base-unicode-symbols" Data.Ord.Unicode      ( (≤) )
+import "base-unicode-symbols" Prelude.Unicode       ( (⋅) )
+import "this" Test.Complexity.Fit     ( fitLinear, linearInv )
+import "this" Test.Complexity.Types   ( InputSize, Sample, stMean )
+import "transformers" Control.Monad.IO.Class         ( MonadIO )
+import "transformers" Control.Monad.Trans.State.Lazy ( StateT, evalStateT, get, put )
+import qualified "hmatrix" Data.Packed.Vector as HM ( fromList )
 
 -------------------------------------------------------------------------------
 -- Measurement strategy
@@ -50,23 +43,23 @@ import Control.Monad.Trans.State.Lazy ( StateT, evalStateT, get, put )
 -- provide a function which transforms this monad to an 'IO'
 -- action. If a value of Nothing is produced this means that it can't
 -- generate any more input sizes and measuring will stop.
-data Strategy α = ∀ m. MonadIO m
-                ⇒ Strategy
-                   { -- | Function which calculates the next
-                     -- 'InputSize' to measure. Arguments are, in
-                     -- order: the number of samples measured thus
-                     -- far, a list of previously measured samples and
-                     -- the remaining time in seconds.
-                     nextInputSize ∷ Int → [Sample] → Double → m (Maybe InputSize)
-                     -- | Run function which lifts the strategy monad
-                     -- to IO.
-                   , runStrategy ∷ (m α → IO α)
-                   }
+data Strategy = ∀ m. MonadIO m
+              ⇒ Strategy
+                 { -- | Function which calculates the next
+                   -- 'InputSize' to measure. Arguments are, in
+                   -- order: the number of samples measured thus
+                   -- far, a list of previously measured samples and
+                   -- the remaining time in seconds.
+                   nextInputSize ∷ Int → [Sample] → Double → m (Maybe InputSize)
+                   -- | Run function which lifts the strategy monad
+                   -- to IO.
+                 , runStrategy ∷ (m [Sample] → IO [Sample])
+                 }
 
 -- | A strategy which produces input sizes from a given list.
 --
 -- When the list is consumed it will produce 'Nothing'.
-inputSizeFromList ∷ [InputSize] → Strategy a
+inputSizeFromList ∷ [InputSize] → Strategy
 inputSizeFromList ns = Strategy (\_ _ _ → m) (\s → evalStateT s ns)
     where
       m ∷ StateT [InputSize] IO (Maybe InputSize)
@@ -80,7 +73,7 @@ inputSizeFromList ns = Strategy (\_ _ _ → m) (\s → evalStateT s ns)
 
 -- | Transforms a strategy into one that can only see the last 'n'
 -- samples.
-limitSamples ∷ Int → Strategy a → Strategy a
+limitSamples ∷ Int → Strategy → Strategy
 limitSamples maxSamples (Strategy next run) =
     Strategy { nextInputSize = \n xs t → next n (take maxSamples xs) t
              , runStrategy   = run
@@ -88,25 +81,34 @@ limitSamples maxSamples (Strategy next run) =
 
 linearHeuristic ∷ Double    -- ^Step size.
                 → InputSize -- ^Maximum input size.
-                → Strategy a
-linearHeuristic step maxSize = Strategy { nextInputSize = \n xs _ → return $ f n $ convertSamples xs
-                                        , runStrategy   = id
-                                        }
-    where
-      f ∷ Int → [(Double, Double)] → Maybe InputSize
-      f n xs@(~((x, y) : _))
-          | n ≤ 2     = Just (fromIntegral n)
-          | otherwise = check (≤ maxSize) $
-                          maybe ( let n' = ceiling x
-                                      x' = ceiling (x ⋅ step)
-                                  in if x' ≤ n' then n' + 1 else x'
-                                )
-                                (\n' → ceiling $ g n')
-                                $ do (b, a) ← fitLinear xs
-                                     return $ linearInv b a (y ⋅ step)
-          where g x' | x' ≤ x     = x + 1
-                     | x' > 2 ⋅ x = 2 ⋅ x
-                     | otherwise  = x'
+                → Strategy
+linearHeuristic step maxSize =
+    Strategy { nextInputSize = \n xs _ → return $ f n $ convertSamples xs
+             , runStrategy   = id
+             }
+  where
+    f ∷ Int → [(Double, Double)] → Maybe InputSize
+    f n xs@(~((x, y) : _))
+        | n ≤ 2     = Just (fromIntegral n)
+        | otherwise = do n' ← ((ceiling ∘ g) <$> nextX) <|> return noNextX
+                         guard $ n' < maxSize
+                         return n'
+        where g ∷ Double → Double
+              g x' | x' ≤ x     = x + 1
+                   | x' > 2 ⋅ x = 2 ⋅ x
+                   | otherwise  = x'
 
-      convertSamples ∷ [Sample] → [(Double, Double)]
-      convertSamples = map (fromIntegral *** statsMean2)
+              noNextX ∷ InputSize
+              noNextX | x' ≤ n'   = n' + 1
+                      | otherwise = x'
+                where
+                  n' = ceiling x
+                  x' = ceiling (x ⋅ step)
+
+              nextX ∷ Maybe Double
+              nextX = do (a, b) ← fitLinear xs
+                         return $ linearInv (HM.fromList [a, b]) (y ⋅ step)
+
+
+    convertSamples ∷ [Sample] → [(Double, Double)]
+    convertSamples = map (fromIntegral *** stMean)
