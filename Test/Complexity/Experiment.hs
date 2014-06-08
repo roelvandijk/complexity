@@ -16,7 +16,7 @@ module Test.Complexity.Experiment
 -- Imports
 -------------------------------------------------------------------------------
 
-import "base" Control.Monad            ( liftM )
+import "base" Control.Monad            ( liftM, forM )
 import "base" Data.Function            ( on )
 import "base" Data.List                ( genericReplicate, sortBy )
 import "base" System.Timeout           ( timeout )
@@ -50,18 +50,22 @@ experiment = Experiment
 -- |Performs an experiment using a given strategy.
 performExperiment ∷ Strategy
                   → Integer -- ^Number of samples per input size.
+                  → Int     -- ^Maximum number of values per input size.
                   → Double  -- ^Maximum measure time in seconds (wall clock time).
                   → Experiment
                   → IO MeasurementStats
 performExperiment (Strategy nextInput (run ∷ m [Sample] → IO [Sample]))
-                  numSamples maxMeasureTime (Experiment desc sensor gen action)
+                  numSamples
+                  maxValues
+                  maxMeasureTime
+                  (Experiment desc sensor gen action)
     = liftM (MeasurementStats desc ∘ sortBy (compare `on` fst))
       ∘ run
       ∘ measureLoop 0 []
       =<< getCurrentTime
     where
       measureSample ∷ InputSize → IO Sample
-      measureSample n = do xs ← measureAction gen action sensor numSamples n
+      measureSample n = do xs ← measureAction n
                            case calcStats xs of
                              Just stats → return (n, stats)
                              Nothing → error "performExperiment: empty samples"
@@ -84,10 +88,11 @@ performExperiment (Strategy nextInput (run ∷ m [Sample] → IO [Sample]))
                        _ → return xs
                 else return xs
 
-measureAction ∷ (NFData α)
-              ⇒ InputGen α → Action α β → Sensor α β → Integer → InputSize → IO (V.Vector Double)
-measureAction gen action sensor numSamples inputSize = fmap V.concat measure
-  where
-    measure ∷ IO [V.Vector Double]
-    measure = let x = gen inputSize
-              in rnf x `seq` mapM (sensor action) $ genericReplicate numSamples x
+      measureAction ∷ InputSize → IO (V.Vector Double)
+      measureAction inputSize =  fmap (V.concat ∘ map V.concat) measure
+        where
+          measure ∷ IO [[V.Vector Double]]
+          measure = let xs = take maxValues $ gen inputSize
+                    in forM xs $ \x → rnf x `seq` mapM (sensor action) $ genericReplicate numSamples x
+
+

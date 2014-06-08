@@ -10,8 +10,8 @@ import qualified "vector" Data.Vector.Unboxed as V ( Vector, minimum, maximum, n
 -- |An Action is a function of which aspects of its execution can be measured.
 type Action α β = α → β
 
--- |A input generator produces a value of a certain size.
-type InputGen α = InputSize → α
+-- |A input generator produces values of a certain size.
+type InputGen α = InputSize → [α]
 
 -- |The size of an input on which an action is applied.
 type InputSize = Integer
@@ -23,7 +23,7 @@ data MeasurementStats = MeasurementStats { msDesc    ∷ Description
                                          , msSamples ∷ [Sample]
                                          } deriving Show
 
--- |Statistics about the sampling of a single input value.
+-- |Statistics about the sampling of a single input size.
 type Sample = (InputSize, Stats)
 
 data Stats = Stats { stMin     ∷ Double

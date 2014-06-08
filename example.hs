@@ -37,15 +37,18 @@ import "criterion" Criterion.Monad ( withConfig, getConfig )
 
 genIntList ∷ InputGen [Int]
 genIntList n = let n' = fromInteger n
-               in [n', n' - 1 .. 0]
+               in [[n', n' - 1 .. 0]]
 
 -- Very simple pseudo random number generator.
 pseudoRnd ∷ Integral n ⇒ n → n → n → n → [n]
 pseudoRnd p1 p2 n d = iterate (\x → (p1 ⋅ x + p2) `mod` n) d
 
 genIntList2 ∷ InputGen [Int]
-genIntList2 n = take (fromInteger n) $ pseudoRnd 16807 0 (2 ^ (31 ∷ Int) - 1) 79
+genIntList2 n = chunk (fromInteger n) $ pseudoRnd 16807 0 (2 ^ (31 ∷ Int) - 1) 79
 
+chunk ∷ Int → [α] → [[α]]
+chunk n xs = let (as, bs) = splitAt n xs
+             in as : chunk n bs
 
 -------------------------------------------------------------------------------
 -- Bunch of fibonacci functions
@@ -112,14 +115,6 @@ bsort xs = iterate swapPass xs !! (length xs - 1)
 qsort ∷ Ord a ⇒ [a] → [a]
 qsort []     = []
 qsort (x:xs) = qsort (filter (< x) xs) ++ [x] ++ qsort (filter (>= x) xs)
-
-{-
-expBSort, expQSort, expSort, expSorts ∷ [Experiment]
-expBSort  = [experiment "bubble sort"    (cpuTimeSensor 10) genIntList2 bsort]
-expQSort  = [experiment "quick sort"     (cpuTimeSensor 10) genIntList2 qsort]
-expSort   = [experiment "Data.List.sort" (cpuTimeSensor 10) genIntList2 sort]
-expSorts  = expBSort ++ expQSort ++ expSort
--}
 
 -------------------------------------------------------------------------------
 -- Map lookups
@@ -257,8 +252,8 @@ expSort env conf = experiment "Data.List.sort"
                               (nf sort)
 
 main ∷ IO ()
-main = withConfig (defaultConfig {cfgSamples = ljust 20}) $ do
+main = withConfig (defaultConfig {cfgSamples = ljust 10}) $ do
          env ← measureEnvironment
          conf ← getConfig
-         liftIO $ defaultMain $ map (\e → e env conf) [expQSort, expBSort, expSort]
+         liftIO $ defaultMain $ map (\e → e env conf) [expQSort, expSort]
 

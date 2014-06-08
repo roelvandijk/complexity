@@ -18,7 +18,7 @@ defaultMain experiments = do
     mapM_ printStats stats
     showStatsChart stats
   where
-    f experiment = performExperiment strategy 1 20.0 experiment
+    f experiment = performExperiment strategy 1 10 60.0 experiment
     strategy = limitSamples 3 $ linearHeuristic 1.2 10000
 
 
